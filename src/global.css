@@ -1,0 +1,181 @@
+:root {
+  --cream: #f5eed8;
+  --green: #333f2e;
+  --orange: #f8a63a;
+  --clay: #de7a45;
+
+  --font-body: "Playfair Display", Georgia, serif;
+  --font-display: "Alfa Slab One", Georgia, serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--cream);
+  color: var(--green);
+  font-family: var(--font-body);
+  line-height: 1.6;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+:focus-visible {
+  outline: 3px solid var(--orange);
+  outline-offset: 3px;
+}
+
+/* ---------- Header ---------- */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 1.5rem 3.5rem;
+}
+
+.logo {
+  font-size: 1.75rem;
+  letter-spacing: 0.1em;
+  color: var(--clay);
+}
+
+.nav {
+  display: flex;
+  gap: 1.75rem;
+  font-size: 1.1rem;
+  color: var(--clay);
+}
+
+.nav a:hover {
+  color: var(--green);
+}
+
+/* ---------- Page panel ---------- */
+.page {
+  padding: 0 1rem 4rem;   /* smaller side gutter */
+}
+
+.panel {
+  width: 95vw;
+  margin: 0 auto;
+  padding: 3.5rem 3rem;
+  background: var(--green);
+  box-shadow: 0 10px 30px rgba(51, 63, 46, 0.45);
+}
+
+.panel-title {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(2.25rem, 5vw, 3.5rem);
+  line-height: 1.1;
+  color: var(--orange);
+}
+
+.panel-sub {
+  margin-top: 0.75rem;
+  font-size: 1.25rem;
+  color: var(--orange);
+}
+
+/* ---------- Cards ---------- */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 2rem;
+  margin-top: 2.5rem;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  background: var(--cream);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.cover {
+  display: flex;
+  align-items: flex-end;
+  min-height: 170px;
+  padding: 1rem;
+}
+
+.cover-title {
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  line-height: 1.2;
+  color: var(--green);
+}
+
+.card-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  padding: 1.1rem 1.25rem 1.25rem;
+}
+
+.card-title {
+  font-size: 1.2rem;
+  line-height: 1.3;
+}
+
+.card-author {
+  font-style: italic;
+  color: var(--clay);
+}
+
+.card-blurb {
+  margin-top: 0.6rem;
+  font-size: 0.95rem;
+}
+
+.card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: auto;
+  padding-top: 1rem;
+}
+
+.tag {
+  padding: 0.2rem 0.7rem;
+  border: 1.5px solid var(--green);
+  border-radius: 999px;
+  font-size: 0.85rem;
+}
+
+.btn {
+  padding: 0.5rem 1.2rem;
+  border: none;
+  border-radius: 6px;
+  background: var(--clay);
+  color: var(--green);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btn:hover {
+  background: var(--orange);
+}
+
+/* ---------- Mobile ---------- */
+@media (max-width: 640px) {
+  .header {
+    padding: 1.25rem 1.5rem;
+  }
+
+  .panel {
+    padding: 2rem 1.25rem;
+  }
+}

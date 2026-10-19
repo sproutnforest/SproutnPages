@@ -1,241 +1,94 @@
-import React from 'react';
+import Header from "./components/Header";
+import BookCard from "./components/BookCard";
+import type { Book } from "./components/BookCard";
 
-// Sample card data matching the warm color scheme
-const cards = [
+// Placeholder data. Swap this for your real recommendations later.
+const books: Book[] = [
   {
     id: 1,
-    title: 'Machine Learning',
-    description: 'Developing models for clustering, classification, forecasting, and regression using Python.',
-    tag: 'ML & AI',
-    buttonText: 'View Projects',
-    buttonBg: '#e5a33c',
+    title: "Piranesi",
+    author: "Susanna Clarke",
+    genre: "Fantasy",
+    blurb: "A man lives in an endless house of statues and tides, and slowly learns what he has forgotten.",
+    color: "#DE7A45",
   },
   {
     id: 2,
-    title: 'Software Engineering',
-    description: 'Building and deploying responsive, scalable web applications with modern frontend & backend tech.',
-    tag: 'Web Dev',
-    buttonText: 'See Stack',
-    buttonBg: '#d96b43',
+    title: "Circe",
+    author: "Madeline Miller",
+    genre: "Mythology",
+    blurb: "The witch from the Odyssey tells her own story, from exile on a lonely island onward.",
+    color: "#F8A63A",
   },
   {
     id: 3,
-    title: 'Creative Works',
-    description: 'Exploring traditional & pop dance choreography, literature, and multidisciplinary design.',
-    tag: 'Hobbies',
-    buttonText: 'Explore More',
-    buttonBg: '#d96b43',
+    title: "The Secret History",
+    author: "Donna Tartt",
+    genre: "Dark academia",
+    blurb: "A circle of classics students at a small college, and the crime that unravels them.",
+    color: "#DE7A45",
+  },
+  {
+    id: 4,
+    title: "Project Hail Mary",
+    author: "Andy Weir",
+    genre: "Sci-fi",
+    blurb: "A lone astronaut wakes up with no memory and a very large problem to solve.",
+    color: "#F8A63A",
+  },
+  {
+    id: 5,
+    title: "Tomorrow, and Tomorrow, and Tomorrow",
+    author: "Gabrielle Zevin",
+    genre: "Literary fiction",
+    blurb: "Two friends build video games together across thirty years of friendship and rivalry.",
+    color: "#DE7A45",
+  },
+  {
+    id: 6,
+    title: "A Psalm for the Wild-Built",
+    author: "Becky Chambers",
+    genre: "Cozy sci-fi",
+    blurb: "A tea monk and a curious robot take a quiet walk through a gentle world.",
+    color: "#F8A63A",
   },
 ];
 
-export default function HomePage() {
-  return (
-    <div style={styles.page}>
-      {/* Top Header */}
-      <header style={styles.header}>
-        <div style={styles.headerContent}>
-          <div style={styles.brandName}>SproutnPages</div>
+const greetings = [
+  { from: 4,  text: "Early light, a stretch and a yawn. Start a new chapter. Curated just for you." },
+  { from: 7,  text: "Good morning. Pick a book to go with your coffee. Curated just for you." },
+  { from: 11, text: "Midday break. Take a breather with a few pages. Curated just for you." },
+  { from: 15, text: "A slow afternoon calls for a good story. Curated just for you." },
+  { from: 18, text: "Quiet reads for the evening. Pick one and settle in. Curated just for you." },
+  { from: 22, text: "Lights low, one more chapter. Curated just for you." },
+];
 
-          {/* Social / Header Action Icons */}
-          <div style={styles.socialIcons}>
-            {/* Stack of Books Icon */}
-            <a href="#" style={styles.socialLink} aria-label="Books">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"></path>
-                <path d="M6.5 6H20"></path>
-                <path d="M6.5 10H20"></path>
-                <path d="M6.5 14H20"></path>
-                <path d="M4 6H2"></path>
-                <path d="M4 10H2"></path>
-                <path d="M4 14H2"></path>
-              </svg>
-            </a>
-
-            {/* Profile Icon */}
-            <a href="#" style={styles.socialLink} aria-label="Profile">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path>
-                <circle cx="12" cy="7" r="4"></circle>
-              </svg>
-            </a>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Full-Width Container */}
-      <main style={styles.main}>
-        {/* Banner Hero Section */}
-        <div style={styles.heroBanner}>
-          <div style={styles.heroLeft}>
-            <span style={styles.subGreeting}>Sprouting Pages, Sprout in Pages</span>
-          </div>
-
-          <div style={styles.heroRight}>
-            <h1 style={styles.heroTitle}>SproutnPages</h1>
-          </div>
-        </div>
-
-        {/* Section Heading */}
-        <div style={styles.sectionHeader}>
-          <h2 style={styles.sectionTitle}>Explore your next pages!</h2>
-        </div>
-
-        {/* Feature Cards Grid */}
-        <div style={styles.cardGrid}>
-          {cards.map((card) => (
-            <div key={card.id} style={styles.card}>
-              <div>
-                <div style={styles.cardTag}>{card.tag}</div>
-                <h3 style={styles.cardTitle}>{card.title}</h3>
-                <p style={styles.cardDescription}>{card.description}</p>
-              </div>
-
-              <button style={{ ...styles.cardButton, backgroundColor: card.buttonBg }}>
-                {card.buttonText}
-              </button>
-            </div>
-          ))}
-        </div>
-      </main>
-    </div>
-  );
+function getGreeting(hour: number) {
+  let current = greetings[greetings.length - 1]; 
+  for (const g of greetings) {
+    if (hour >= g.from) current = g;
+  }
+  return current.text;
 }
 
-// Added 'as const' at the end to satisfy TypeScript CSS properties strictly
-const styles = {
-  page: {
-    backgroundColor: '#f5efe0',
-    minHeight: '100vh',
-    width: '100%',
-    color: '#d96b43',
-    fontFamily: 'Georgia, "Times New Roman", serif',
-    paddingBottom: '60px',
-    boxSizing: 'border-box' as const,
-  },
-  header: {
-    width: '100%',
-    padding: '24px 0',
-    boxSizing: 'border-box' as const,
-  },
-  headerContent: {
-    width: '100%',
-    padding: '0 40px',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    boxSizing: 'border-box' as const,
-  },
-  brandName: {
-    fontSize: '22px',
-    color: '#d96b43',
-    fontWeight: 'bold' as const,
-  },
-  socialIcons: {
-    display: 'flex',
-    gap: '16px',
-    alignItems: 'center',
-  },
-  socialLink: {
-    color: '#d96b43',
-    textDecoration: 'none',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  main: {
-    width: '100%',
-    padding: '0 40px 80px 40px',
-    boxSizing: 'border-box' as const,
-  },
-  heroBanner: {
-    width: '100%',
-    backgroundColor: '#32422e',
-    borderRadius: '4px',
-    boxShadow: '0 10px 25px rgba(0, 0, 0, 0.15)',
-    padding: '48px 40px',
-    display: 'flex',
-    flexDirection: 'row' as const,
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: '32px',
-    boxSizing: 'border-box' as const,
-  },
-  heroLeft: {
-    flex: 1,
-  },
-  subGreeting: {
-    color: '#e5a33c',
-    fontSize: '22px',
-    fontWeight: 'normal' as const,
-  },
-  heroRight: {
-    flex: '0 0 auto',
-  },
-  heroTitle: {
-    color: '#e5a33c',
-    fontSize: '44px',
-    fontWeight: '900' as const,
-    margin: 0,
-    fontFamily: 'Georgia, serif',
-  },
-  sectionHeader: {
-    marginTop: '48px',
-    marginBottom: '24px',
-    textAlign: 'center' as const,
-  },
-  sectionTitle: {
-    color: '#32422e',
-    fontSize: '28px',
-    fontWeight: 'bold' as const,
-  },
-  cardGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-    gap: '24px',
-    width: '100%',
-    boxSizing: 'border-box' as const,
-  },
-  card: {
-    backgroundColor: '#32422e',
-    borderRadius: '4px',
-    padding: '32px 28px',
-    display: 'flex',
-    flexDirection: 'column' as const,
-    justifyContent: 'space-between',
-    minHeight: '220px',
-    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
-    boxSizing: 'border-box' as const,
-  },
-  cardTag: {
-    color: '#e5a33c',
-    fontSize: '12px',
-    textTransform: 'uppercase' as const,
-    letterSpacing: '1px',
-    marginBottom: '8px',
-    fontFamily: 'system-ui, sans-serif',
-  },
-  cardTitle: {
-    color: '#f5efe0',
-    fontSize: '22px',
-    fontWeight: 'bold' as const,
-    margin: '0 0 12px 0',
-  },
-  cardDescription: {
-    color: '#c2cdbb',
-    fontSize: '14px',
-    lineHeight: '1.6',
-    margin: '0 0 24px 0',
-    fontFamily: 'system-ui, -apple-system, sans-serif',
-  },
-  cardButton: {
-    border: 'none',
-    color: '#32422e',
-    padding: '10px 18px',
-    borderRadius: '8px',
-    fontWeight: 'bold' as const,
-    fontSize: '13px',
-    cursor: 'pointer',
-    alignSelf: 'flex-start',
-    fontFamily: 'system-ui, -apple-system, sans-serif',
-  },
-} as const;
+export default function App() {
+  const greeting = getGreeting(new Date().getHours());
+
+  return (
+    <>
+      <Header />
+      <main className="page">
+        <section className="panel">
+          <h3 className="panel-title">Picked for you</h3>
+          <p className="panel-sub">{greeting}</p>
+
+          <div className="grid">
+            {books.map((book) => (
+              <BookCard key={book.id} book={book} />
+            ))}
+          </div>
+        </section>
+      </main>
+    </>
+  );
+}
