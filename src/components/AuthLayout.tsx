@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import authImage from "../assets/hero.png"; // your picture
+import authImage from "../assets/tea_logo.png"; // your picture
 
 export default function AuthLayout({ children }: { children: ReactNode }) {
   return (

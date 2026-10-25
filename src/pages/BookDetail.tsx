@@ -1,140 +1,253 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useParams } from "react-router-dom";
-
-type Review = {
-  id: number;
-  username: string;
-  rating: number;
-  text: string;
-};
-
-// Static placeholder reviews. Replace with real data later.
-const reviews: Review[] = [
-  { id: 1, username: "pageturner42", rating: 5, text: "Couldn't put it down. I finished it in two evenings and immediately wanted to start over." },
-  { id: 2, username: "quietreader", rating: 4, text: "Beautifully written, a little slow in the middle, but the ending made up for it." },
-  { id: 3, username: "marginalia", rating: 3, text: "Good ideas, though I wanted more from the characters." },
-];
-
-function Stars({ value }: { value: number }) {
-  return (
-    <span className="stars" aria-label={`${value} out of 5 stars`}>
-      {[1, 2, 3, 4, 5].map((n) => (
-        <span key={n} className={n <= value ? "star filled" : "star"}>★</span>
-      ))}
-    </span>
-  );
-}
-
-function StarInput({ value, onChange }: { value: number; onChange: (n: number) => void }) {
-  const [hover, setHover] = useState(0);
-  return (
-    <div className="stars star-input">
-      {[1, 2, 3, 4, 5].map((n) => (
-        <button
-          type="button"
-          key={n}
-          className={n <= (hover || value) ? "star filled" : "star"}
-          onClick={() => onChange(n)}
-          onMouseEnter={() => setHover(n)}
-          onMouseLeave={() => setHover(0)}
-          aria-label={`${n} star${n > 1 ? "s" : ""}`}
-        >
-          ★
-        </button>
-      ))}
-    </div>
-  );
-}
+import AddToShelfModal from "../components/AddToShelfModal";
+import ReviewCard from "../components/ReviewCard";
+import { StarInput } from "../components/Stars";
+import { useAuth } from "../context/AuthContext";
+import { getBookById } from "../lib/qdrant";
+import type { Book } from "../lib/qdrant";
+import { getReviewsForBook, saveReview } from "../lib/ratings";
+import type { BookReview } from "../lib/ratings";
+import { errorMessage } from "../lib/shelves";
+import BookCover from "../components/BookCover";
 
 export default function BookDetail() {
-  const { title } = useParams<{ title: string }>();
-//   const { author } = "R.F.Kuang"<{ author: string}>() ???;
+  const { bookId } = useParams<{ bookId: string }>();
+  const { session } = useAuth();
+  const userId = session?.user.id;
+
+  const [book, setBook] = useState<Book | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const [reviews, setReviews] = useState<BookReview[]>([]);
+  const [reviewsLoading, setReviewsLoading] = useState(true);
+  const [reviewsError, setReviewsError] = useState("");
+
+  const [showShelf, setShowShelf] = useState(false);
+
   const [showModal, setShowModal] = useState(false);
   const [rating, setRating] = useState(0);
   const [text, setText] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
-  function handleSubmit(e: FormEvent) {
+  // Load the book from Qdrant
+  useEffect(() => {
+    if (!bookId) return;
+    let cancelled = false;
+
+    async function loadBook() {
+      setLoading(true);
+      setError("");
+      try {
+        const result = await getBookById(bookId!);
+        if (!cancelled) setBook(result);
+      } catch (err) {
+        if (!cancelled) setError(errorMessage(err));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    loadBook();
+    return () => {
+      cancelled = true;
+    };
+  }, [bookId]);
+
+  // Load the reviews from Supabase
+  useEffect(() => {
+    if (!bookId) return;
+    let cancelled = false;
+
+    async function loadReviews() {
+      setReviewsLoading(true);
+      setReviewsError("");
+      try {
+        const list = await getReviewsForBook(bookId!);
+        if (!cancelled) setReviews(list);
+      } catch (err) {
+        if (!cancelled) setReviewsError(errorMessage(err));
+      } finally {
+        if (!cancelled) setReviewsLoading(false);
+      }
+    }
+
+    loadReviews();
+    return () => {
+      cancelled = true;
+    };
+  }, [bookId]);
+
+  const myReview = reviews.find((r) => r.user_id === userId);
+
+  function openReviewModal() {
+    setRating(myReview?.rating ?? 0);
+    setText(myReview?.review ?? "");
+    setSaveError("");
+    setShowModal(true);
+  }
+
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    // TODO: send to your backend
-    console.log({ title, rating, text });
-    setShowModal(false);
-    setRating(0);
-    setText("");
+    if (!userId || !bookId || rating === 0) return;
+
+    setSaving(true);
+    setSaveError("");
+    try {
+      const saved = await saveReview(
+        userId,
+        bookId,
+        rating,
+        text.trim() || null,
+      );
+      setReviews((prev) =>
+        prev.some((r) => r.user_id === userId)
+          ? prev.map((r) => (r.user_id === userId ? saved : r))
+          : [saved, ...prev],
+      );
+      setShowModal(false);
+    } catch (err) {
+      setSaveError(errorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <main className="page">
+        <section className="panel">
+          <p className="panel-sub">Loading...</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (error || !book) {
+    return (
+      <main className="page">
+        <section className="panel">
+          <h3 className="panel-title">Book not found</h3>
+          {error && <p className="auth-error">{error}</p>}
+        </section>
+      </main>
+    );
   }
 
   return (
     <main className="page">
-      <section className="book-panel">
+      <section className="panel">
         <div className="book-top">
           <div className="book-cover">
-            <img src="..\src\assets\hero.png" /> 
+            <BookCover
+              key={book.book_id}
+              bookId={book.book_id}
+              title={book.title}
+              coverLink={book.cover_link}
+            />
           </div>
 
           <div className="book-info">
-            <h1 className="book-title">{title}</h1>
-            <h2 className="book-author">R. F. Kuang</h2>
-            <p className="book-desc">
-              Traduttore, traditore: An act of translation is always an act of betrayal.
+            <h1 className="book-title">{book.title}</h1>
+            <h2 className="book-author">{book.author}</h2>
+            <p className="book-desc">{book.description}</p>
 
-<br></br>1828. Robin Swift, orphaned by cholera in Canton, is brought to London by the mysterious Professor Lovell. There, he trains for years in Latin, Ancient Greek, and Chinese, all in preparation for the day he’ll enroll in Oxford University’s prestigious Royal Institute of Translation—also known as Babel. The tower and its students are the world's center for translation and, more importantly, magic. Silver-working—the art of manifesting the meaning lost in translation using enchanted silver bars—has made the British unparalleled in power, as the arcane craft serves the Empire's quest for colonization.
-
-<br></br>For Robin, Oxford is a utopia dedicated to the pursuit of knowledge. But knowledge obeys power, and as a Chinese boy raised in Britain, Robin realizes serving Babel means betraying his motherland. As his studies progress, Robin finds himself caught between Babel and the shadowy Hermes Society, an organization dedicated to stopping imperial expansion. When Britain pursues an unjust war with China over silver and opium, Robin must decide . . . 
-
-<br></br>Can powerful institutions be changed from within, or does revolution always require violence?
-            </p>
-             <button className="btn">Add to library</button>
+            <div className="book-actions">
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setShowShelf(true)}
+              >
+                + Add to shelf
+              </button>
+            </div>
           </div>
         </div>
 
         <div className="reviews">
-            <section className="review-panel">
           <div className="reviews-head">
             <h3 className="reviews-title">Reviews</h3>
-            <button className="btn" onClick={() => setShowModal(true)}>Add review</button>
+            <button className="btn" onClick={openReviewModal}>
+              {myReview ? "Edit your review" : "Add review"}
+            </button>
           </div>
 
-          <ul className="review-list">
-            {reviews.map((r) => (
-              <li key={r.id} className="review-card">
-                <div className="review-meta">
-                  <span className="review-user">{r.username}</span>
-                  <Stars value={r.rating} />
-                </div>
-                <p>{r.text}</p>
-              </li>
-            ))}
-          </ul>
-          </section>
+          {reviewsLoading && <p className="panel-sub">Loading reviews...</p>}
+          {reviewsError && <p className="auth-error">{reviewsError}</p>}
+          {!reviewsLoading && !reviewsError && reviews.length === 0 && (
+            <p className="panel-sub">
+              No reviews yet. Be the first to add one.
+            </p>
+          )}
+
+          {reviews.length > 0 && (
+            <ul className="review-list">
+              {reviews.map((r) => (
+                <ReviewCard
+                  key={r.id}
+                  heading={r.reviewer?.username ?? "Unknown reader"}
+                  createdAt={r.created_at}
+                  rating={r.rating}
+                  text={r.review}
+                />
+              ))}
+            </ul>
+          )}
         </div>
       </section>
 
       {showModal && (
         <div className="modal-backdrop" onClick={() => setShowModal(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h3 className="modal-title">Review {title}</h3>
+            <h3 className="modal-title">
+              {myReview ? "Edit your review" : `Review ${book.title}`}
+            </h3>
             <form className="auth-form" onSubmit={handleSubmit}>
               <label>
                 Your rating
                 <StarInput value={rating} onChange={setRating} />
               </label>
               <label>
-                Your review
+                Your review (optional)
                 <textarea
                   rows={5}
                   value={text}
                   onChange={(e) => setText(e.target.value)}
                   placeholder="What did you think?"
-                  required
                 />
               </label>
+              {saveError && <p className="auth-error">{saveError}</p>}
               <div className="modal-actions">
-                <button type="button" className="btn btn-ghost" onClick={() => setShowModal(false)}>Cancel</button>
-                <button type="submit" className="btn" disabled={rating === 0}>Submit</button>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => setShowModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn"
+                  disabled={saving || rating === 0}
+                >
+                  {saving ? "Saving..." : "Submit"}
+                </button>
               </div>
             </form>
           </div>
         </div>
+      )}
+
+      {showShelf && userId && bookId && (
+        <AddToShelfModal
+          userId={userId}
+          bookId={bookId}
+          bookTitle={book.title}
+          onClose={() => setShowShelf(false)}
+        />
       )}
     </main>
   );

@@ -1,31 +1,21 @@
-export interface Book {
-  id: number;
-  title: string;
-  author: string;
-  genre: string;
-  blurb: string;
-  color: string;
-}
+import { Link } from "react-router-dom";
+import BookCover from "./BookCover";
+import type { Book } from "../lib/qdrant";
 
-export default function BookCard({ book }: { book: Book }) {
+type Props = {
+  book: Pick<Book, "book_id" | "title" | "author" | "cover_link">;
+};
+
+export default function BookCard({ book }: Props) {
   return (
-    <article className="card">
-      <div className="cover" style={{ background: book.color }}>
-        <span className="cover-title">{book.title}</span>
+    <Link to={`/book/${book.book_id}`} className="rec-card">
+      <div className="rec-cover">
+        <BookCover bookId={book.book_id} title={book.title} coverLink={book.cover_link} />
       </div>
-
-      <div className="card-body">
-        <h2 className="card-title">{book.title}</h2>
-        <p className="card-author">{book.author}</p>
-        <p className="card-blurb">{book.blurb}</p>
-
-        <div className="card-footer">
-          <span className="tag">{book.genre}</span>
-          <button className="btn" type="button">
-            Save
-          </button>
-        </div>
+      <div className="rec-info">
+        <span className="rec-title">{book.title}</span>
+        <span className="rec-author">{book.author}</span>
       </div>
-    </article>
+    </Link>
   );
 }
