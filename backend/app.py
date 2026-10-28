@@ -171,15 +171,18 @@ def recommend(limit: int = 100, authorization: str | None = Header(default=None)
     order = np.lexsort((-cos, -primary))
 
     # 6. Send back
-    keys = ("book_id", "title", "author", "description", "author_id", "cover_link")
+    keys = ("book_id", "title", "author", "description", "author_id")
+    top = order[:limit]
+    covers = fetch_covers([ids[i] for i in top])
     books = [
         {
             **{k: cands[i].payload.get(k) for k in keys},
+            "cover_link": covers.get(ids[i]),
             "predicted_rating": int(CLASS_VALUES[pred_class[i]]),
             "expected_rating": round(float(expected[i]), 3),
             "cosine": round(float(cos[i]), 4),
         }
-        for i in order[:limit]
+        for i in top
     ]
     return {"books": books}
 
@@ -209,6 +212,19 @@ def search_score(payload: dict, words: list[str], qn: str) -> tuple:
     popularity = float(payload.get("b_cnt", 0))  # the rating count you uploaded
     return (-score, -popularity)
 
+def fetch_covers(book_ids: list[str]) -> dict[str, str]:
+    """book_id -> cover url, one query for the whole list."""
+    if not book_ids:
+        return {}
+    rows = (
+        sb.table("book_cover")
+        .select("book_id, cover_url")
+        .in_("book_id", book_ids)
+        .execute()
+        .data
+    )
+    return {str(r["book_id"]): r["cover_url"] for r in rows if r.get("cover_url")}
+
 
 @app.get("/search")
 def search(q: str, limit: int = 40, authorization: str | None = Header(default=None)):
@@ -232,7 +248,7 @@ def search(q: str, limit: int = 40, authorization: str | None = Header(default=N
         COLLECTION,
         scroll_filter=flt,
         limit=300,
-        with_payload=["book_id", "title", "author", "author_id", "cover_link", "b_cnt"],
+        with_payload=["book_id", "title", "author", "author_id", "b_cnt"],
         with_vectors=False,
     )
 
@@ -247,4 +263,9 @@ def search(q: str, limit: int = 40, authorization: str | None = Header(default=N
         results.append({key: pl.get(key) for key in ("book_id", "title", "author", "author_id", "cover_link")})
         if len(results) == limit:
             break
+
+    covers = fetch_covers([str(r["book_id"]) for r in results])
+    for r in results:
+        r["cover_link"] = covers.get(str(r["book_id"]))
+
     return {"books": results}

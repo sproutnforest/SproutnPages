@@ -11,6 +11,7 @@ import { getReviewsForBook, saveReview } from "../lib/ratings";
 import type { BookReview } from "../lib/ratings";
 import { errorMessage } from "../lib/shelves";
 import BookCover from "../components/BookCover";
+import { getCoverUrl } from "../lib/covers";
 
 export default function BookDetail() {
   const { bookId } = useParams<{ bookId: string }>();
@@ -32,6 +33,7 @@ export default function BookDetail() {
   const [text, setText] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [coverUrl, setCoverUrl] = useState<string | null>(null);
 
   // Load the book from Qdrant
   useEffect(() => {
@@ -76,6 +78,20 @@ export default function BookDetail() {
     }
 
     loadReviews();
+    return () => {
+      cancelled = true;
+    };
+  }, [bookId]);
+
+  useEffect(() => {
+    if (!bookId) return;
+    let cancelled = false;
+    setCoverUrl(null);
+
+    getCoverUrl(bookId).then((url) => {
+      if (!cancelled) setCoverUrl(url);
+    });
+
     return () => {
       cancelled = true;
     };
@@ -146,7 +162,7 @@ export default function BookDetail() {
               key={book.book_id}
               bookId={book.book_id}
               title={book.title}
-              coverLink={book.cover_link}
+              coverLink={coverUrl}
             />
           </div>
 
