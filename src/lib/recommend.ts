@@ -2,9 +2,9 @@ import { supabase } from "./supabase";
 import type { Book } from "./qdrant";
 
 export type RecommendedBook = Book & {
-  predicted_rating: number;
-  expected_rating: number;
-  cosine: number;
+  predicted_rating?: number;
+  expected_rating?: number;
+  cosine?: number;
 };
 
 export type RecommendResult = { books: RecommendedBook[]; reason?: string };

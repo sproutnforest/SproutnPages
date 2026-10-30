@@ -22,6 +22,7 @@ from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from qdrant_client import QdrantClient, models
 from supabase import create_client
+import random
 
 load_dotenv()
 
@@ -102,7 +103,7 @@ def recommend(limit: int = 100, authorization: str | None = Header(default=None)
         if r["rating"] >= MIN_HISTORY_RATING
     }
     if not history:
-        return {"books": [], "reason": "no_history"}  # cold start: handle later
+        return cold_start(rated_ids, limit)
 
     # 2. Their vectors -> rating-weighted profile (as in compute_chunk_features)
     rated_points, _ = qdrant.scroll(
@@ -121,7 +122,7 @@ def recommend(limit: int = 100, authorization: str | None = Header(default=None)
             vecs.append(first_vector(p.vector))
             weights.append(w)
     if not vecs:
-        return {"books": [], "reason": "no_vectors"}
+        return cold_start(rated_ids, limit)
     V = np.asarray(vecs, dtype=np.float32)
     W = np.asarray(weights, dtype=np.float32)
     profile = (W[:, None] * V).sum(axis=0) / W.sum()
@@ -315,4 +316,63 @@ def get_books(ids: str, authorization: str | None = Header(default=None)):
         with_vectors=False,
     )
     by_id = {str(p.payload["book_id"]): p.payload for p in points}
-    return {"books": [by_id[i] for i in id_list if i in by_id]}  # keeps shelf order
+    return {"books": [by_id[i] for i in id_list if i in by_id]}  
+
+COLD_START_COUNT = 50      # how many books to show
+COLD_START_POOL = 1000      # random books to choose the spread-out set from
+COLD_START_MIN_RATINGS = int(os.environ.get("COLD_START_MIN_RATINGS", "50"))  # 0 = no popularity filter
+
+def diverse_books(exclude_ids: list[str], count: int) -> list[dict]:
+    must = []
+    if COLD_START_MIN_RATINGS > 0:
+        must.append(models.FieldCondition(key="b_cnt", range=models.Range(gte=COLD_START_MIN_RATINGS)))
+    must_not = []
+    if exclude_ids:
+        must_not.append(models.FieldCondition(key="book_id", match=models.MatchAny(any=exclude_ids)))
+
+    points = qdrant.query_points(
+        COLLECTION,
+        query=models.SampleQuery(sample=models.Sample.RANDOM),
+        query_filter=models.Filter(must=must or None, must_not=must_not or None),
+        limit=COLD_START_POOL,
+        with_payload=["book_id", "title", "author", "description", "author_id"],
+        with_vectors=True,
+    ).points
+
+    # one entry per book (editions merged), and only points that have a vector
+    seen, uniq = set(), []
+    for p in points:
+        if p.vector is None:
+            continue
+        k = work_key(p.payload)
+        if k in seen:
+            continue
+        seen.add(k)
+        uniq.append(p)
+    if not uniq:
+        return []
+
+    V = np.asarray([first_vector(p.vector) for p in uniq], dtype=np.float32)
+    V /= np.maximum(np.linalg.norm(V, axis=1, keepdims=True), 1e-8)
+
+    # farthest-point selection: each new pick is the book farthest from all picks so far
+    n = min(count, len(uniq))
+    chosen = [random.randrange(len(uniq))]
+    min_dist = 1.0 - V @ V[chosen[0]]
+    while len(chosen) < n:
+        min_dist[chosen] = -1.0
+        nxt = int(np.argmax(min_dist))
+        chosen.append(nxt)
+        min_dist = np.minimum(min_dist, 1.0 - V @ V[nxt])
+
+    random.shuffle(chosen)
+    keys = ("book_id", "title", "author", "description", "author_id")
+    return [{k: uniq[i].payload.get(k) for k in keys} for i in chosen]
+
+
+def cold_start(rated_ids: list[str], limit: int) -> dict:
+    books = diverse_books(rated_ids, min(limit, COLD_START_COUNT))
+    covers = fetch_covers([str(b["book_id"]) for b in books])
+    for b in books:
+        b["cover_link"] = covers.get(str(b["book_id"]))
+    return {"books": books, "reason": "cold_start"}

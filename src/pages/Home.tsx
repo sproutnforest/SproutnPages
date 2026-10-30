@@ -106,6 +106,12 @@ export default function Home() {
           </p>
         )}
 
+        {reason === "cold_start" && books.length > 0 && (
+          <p className="panel-sub cold-note">
+            Rate a few books you like (3 stars or more) and our recommendation will start matching your taste.
+          </p>
+        )}
+
         {books.length > 0 && (
           <div className="grid">
             {books.map((book) => (
