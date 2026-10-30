@@ -16,18 +16,6 @@ import LoadingText from "../components/LoadingText";
 
 type UserRow = { username: string; email: string };
 
-function Stars({ value }: { value: number }) {
-  return (
-    <span className="stars" aria-label={`${value} out of 5 stars`}>
-      {[1, 2, 3, 4, 5].map((n) => (
-        <span key={n} className={n <= value ? "star filled" : "star"}>
-          ★
-        </span>
-      ))}
-    </span>
-  );
-}
-
 export default function Profile() {
   const { session } = useAuth();
   const userId = session?.user.id;
