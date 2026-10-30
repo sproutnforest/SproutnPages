@@ -320,7 +320,7 @@ def get_books(ids: str, authorization: str | None = Header(default=None)):
 
 COLD_START_COUNT = 50      # how many books to show
 COLD_START_POOL = 1000      # random books to choose the spread-out set from
-COLD_START_MIN_RATINGS = int(os.environ.get("COLD_START_MIN_RATINGS", "50"))  # 0 = no popularity filter
+COLD_START_MIN_RATINGS = int(os.environ.get("COLD_START_MIN_RATINGS", "0"))  # 0 = no popularity filter
 
 def diverse_books(exclude_ids: list[str], count: int) -> list[dict]:
     must = []

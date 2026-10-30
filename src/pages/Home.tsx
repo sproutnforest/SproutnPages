@@ -98,14 +98,6 @@ export default function Home() {
           </div>
         )}
 
-        {!loading && !error && books.length === 0 && (
-          <p className="panel-sub">
-            {reason
-              ? "Rate a few books you liked (3 stars or more) and your picks will show up here."
-              : "No recommendations right now. Check back soon."}
-          </p>
-        )}
-
         {reason === "cold_start" && books.length > 0 && (
           <p className="panel-sub cold-note">
             Rate a few books you like (3 stars or more) and our recommendation will start matching your taste.
