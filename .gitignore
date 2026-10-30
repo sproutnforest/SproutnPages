@@ -25,3 +25,9 @@ dist-ssr
 
 .env
 backend/.env
+.env
+backend/.env
+venv/
+backend/venv/
+__pycache__/
+node_modules/

@@ -35,13 +35,13 @@ qdrant = QdrantClient(url=os.environ["QDRANT_URL"], api_key=os.environ["QDRANT_A
 sb = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 app = FastAPI()
+ORIGINS = [o.strip() for o in os.environ.get("FRONTEND_ORIGINS", "http://localhost:5173").split(",")]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # add your hosted frontend URL later
+    allow_origins=ORIGINS,
     allow_methods=["GET"],
     allow_headers=["Authorization"],
 )
-
 
 def get_user_id(authorization: str | None) -> str:
     if not authorization or not authorization.startswith("Bearer "):
@@ -269,3 +269,41 @@ def search(q: str, limit: int = 40, authorization: str | None = Header(default=N
         r["cover_link"] = covers.get(str(r["book_id"]))
 
     return {"books": results}
+
+
+BOOK_KEYS = ["book_id", "title", "author", "description", "author_id"]
+
+@app.get("/books/{book_id}")
+def get_book(book_id: str, authorization: str | None = Header(default=None)):
+    get_user_id(authorization)
+    points, _ = qdrant.scroll(
+        COLLECTION,
+        scroll_filter=models.Filter(must=[
+            models.FieldCondition(key="book_id", match=models.MatchValue(value=book_id))
+        ]),
+        limit=1,
+        with_payload=BOOK_KEYS,
+        with_vectors=False,
+    )
+    if not points:
+        raise HTTPException(404, "Book not found")
+    return points[0].payload
+
+
+@app.get("/books")
+def get_books(ids: str, authorization: str | None = Header(default=None)):
+    get_user_id(authorization)
+    id_list = [i for i in ids.split(",") if i][:200]
+    if not id_list:
+        return {"books": []}
+    points, _ = qdrant.scroll(
+        COLLECTION,
+        scroll_filter=models.Filter(must=[
+            models.FieldCondition(key="book_id", match=models.MatchAny(any=id_list))
+        ]),
+        limit=len(id_list),
+        with_payload=BOOK_KEYS,
+        with_vectors=False,
+    )
+    by_id = {str(p.payload["book_id"]): p.payload for p in points}
+    return {"books": [by_id[i] for i in id_list if i in by_id]}  # keeps shelf order
