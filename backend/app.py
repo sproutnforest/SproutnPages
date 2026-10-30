@@ -1,3 +1,12 @@
+import ctypes
+import sys
+from pathlib import Path
+
+if sys.platform.startswith("linux"):
+       _gomp = Path(__file__).parent / "native_libs" / "libgomp.so.1"
+       if _gomp.exists():
+           ctypes.CDLL(str(_gomp), mode=ctypes.RTLD_GLOBAL)
+
 import lightgbm as lgb  # keep first, like in your eval file
 
 import os
