@@ -256,6 +256,32 @@ export default function BookDetail() {
                 </button>
               )}
             </div>
+            {confirmDelete && (
+              <div className="confirm-box">
+                <p>
+                  Delete your review of this book? Your rating will be removed
+                  too.
+                </p>
+                <div className="modal-actions">
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={() => setConfirmDelete(false)}
+                    disabled={deleting}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-danger"
+                    onClick={handleDelete}
+                    disabled={deleting}
+                  >
+                    {deleting ? "Deleting..." : "Delete"}
+                  </button>
+                </div>
+              </div>
+            )}
             <form className="auth-form" onSubmit={handleSubmit}>
               <label>
                 Your rating
@@ -299,32 +325,6 @@ export default function BookDetail() {
           bookTitle={book.title}
           onClose={() => setShowShelf(false)}
         />
-      )}
-
-      {confirmDelete && (
-        <div className="confirm-box">
-          <p>
-            Delete your review of this book? Your rating will be removed too.
-          </p>
-          <div className="modal-actions">
-            <button
-              type="button"
-              className="btn btn-ghost"
-              onClick={() => setConfirmDelete(false)}
-              disabled={deleting}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="btn btn-danger"
-              onClick={handleDelete}
-              disabled={deleting}
-            >
-              {deleting ? "Deleting..." : "Delete"}
-            </button>
-          </div>
-        </div>
       )}
     </main>
   );
