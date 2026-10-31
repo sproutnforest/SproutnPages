@@ -39,7 +39,6 @@ export default function Header() {
                 aria-label="Search books"
               />
             </form>
-            <Link to="/library">My Library</Link>
             <button
               className="nav-link-btn"
               onClick={() => supabase.auth.signOut()}
