@@ -52,3 +52,16 @@ export async function saveReview(
   if (error) throw error;
   return data as unknown as BookReview;
 }
+
+export async function deleteReview(userId: string, bookId: string): Promise<void> {
+  const { data, error } = await supabase
+    .from("rating")
+    .delete()
+    .eq("user_id", userId)
+    .eq("book_id", bookId)
+    .select("id");
+  if (error) throw error;
+  if (!data || data.length === 0) {
+    throw new Error("Couldn't delete your review. Please try again.");
+  }
+}

@@ -7,11 +7,12 @@ import { StarInput } from "../components/Stars";
 import { useAuth } from "../context/AuthContext";
 import { getBookById } from "../lib/qdrant";
 import type { Book } from "../lib/qdrant";
-import { getReviewsForBook, saveReview } from "../lib/ratings";
+import { deleteReview, getReviewsForBook, saveReview } from "../lib/ratings";
 import type { BookReview } from "../lib/ratings";
 import { errorMessage } from "../lib/shelves";
 import BookCover from "../components/BookCover";
 import { getCoverUrl } from "../lib/covers";
+import TrashIcon from "../components/TrashIcon";
 
 export default function BookDetail() {
   const { bookId } = useParams<{ bookId: string }>();
@@ -34,6 +35,9 @@ export default function BookDetail() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
+
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // Load the book from Qdrant
   useEffect(() => {
@@ -103,6 +107,7 @@ export default function BookDetail() {
     setRating(myReview?.rating ?? 0);
     setText(myReview?.review ?? "");
     setSaveError("");
+    setConfirmDelete(false);
     setShowModal(true);
   }
 
@@ -129,6 +134,22 @@ export default function BookDetail() {
       setSaveError(errorMessage(err));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!userId || !bookId) return;
+    setDeleting(true);
+    setSaveError("");
+    try {
+      await deleteReview(userId, bookId);
+      setReviews((prev) => prev.filter((r) => r.user_id !== userId));
+      setConfirmDelete(false);
+      setShowModal(false);
+    } catch (err) {
+      setSaveError(errorMessage(err));
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -218,9 +239,23 @@ export default function BookDetail() {
       {showModal && (
         <div className="modal-backdrop" onClick={() => setShowModal(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h3 className="modal-title">
-              {myReview ? "Edit your review" : `Review ${book.title}`}
-            </h3>
+            <div className="shelf-modal-head">
+              <h3 className="modal-title">
+                {myReview ? "Edit your review" : `Review ${book.title}`}
+              </h3>
+              {myReview && (
+                <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label="Delete your review"
+                  title="Delete your review"
+                  onClick={() => setConfirmDelete(true)}
+                  disabled={deleting || saving}
+                >
+                  <TrashIcon size={20} />
+                </button>
+              )}
+            </div>
             <form className="auth-form" onSubmit={handleSubmit}>
               <label>
                 Your rating
@@ -264,6 +299,32 @@ export default function BookDetail() {
           bookTitle={book.title}
           onClose={() => setShowShelf(false)}
         />
+      )}
+
+      {confirmDelete && (
+        <div className="confirm-box">
+          <p>
+            Delete your review of this book? Your rating will be removed too.
+          </p>
+          <div className="modal-actions">
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => setConfirmDelete(false)}
+              disabled={deleting}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn btn-danger"
+              onClick={handleDelete}
+              disabled={deleting}
+            >
+              {deleting ? "Deleting..." : "Delete"}
+            </button>
+          </div>
+        </div>
       )}
     </main>
   );
