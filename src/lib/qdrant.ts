@@ -7,6 +7,8 @@ export type Book = {
   description: string;
   author_id: number;
   cover_link?: string | null;
+  b_cnt?: number;
+  b_avg?: number;
 };
 
 const API = import.meta.env.VITE_API_URL as string;
@@ -29,9 +31,12 @@ export async function getBookById(bookId: string): Promise<Book | null> {
 
 export async function getBooksByIds(bookIds: string[]): Promise<Book[]> {
   if (bookIds.length === 0) return [];
-  const res = await fetch(`${API}/books?ids=${encodeURIComponent(bookIds.join(","))}`, {
-    headers: await authHeaders(),
-  });
+  const res = await fetch(
+    `${API}/books?ids=${encodeURIComponent(bookIds.join(","))}`,
+    {
+      headers: await authHeaders(),
+    },
+  );
   if (!res.ok) throw new Error(`Request failed (${res.status})`);
   return (await res.json()).books;
 }

@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { useParams } from "react-router-dom";
 import AddToShelfModal from "../components/AddToShelfModal";
 import ReviewCard from "../components/ReviewCard";
-import { StarInput } from "../components/Stars";
+import { StarInput, StarsAverage } from "../components/Stars";
 import { useAuth } from "../context/AuthContext";
 import { getBookById } from "../lib/qdrant";
 import type { Book } from "../lib/qdrant";
@@ -13,6 +13,8 @@ import { errorMessage } from "../lib/shelves";
 import BookCover from "../components/BookCover";
 import { getCoverUrl } from "../lib/covers";
 import TrashIcon from "../components/TrashIcon";
+import BookDetailSkeleton from "../components/BookDetailSkeleton";
+import ReviewSkeletonList from "../components/ReviewSkeletonList";
 
 export default function BookDetail() {
   const { bookId } = useParams<{ bookId: string }>();
@@ -103,6 +105,15 @@ export default function BookDetail() {
 
   const myReview = reviews.find((r) => r.user_id === userId);
 
+  const ratingSummary = useMemo(() => {
+    const baseN = Number(book?.b_cnt ?? 0);
+    const baseAvg = Number(book?.b_avg ?? 0);
+    const siteN = reviews.length;
+    const siteSum = reviews.reduce((sum, r) => sum + r.rating, 0);
+    const total = baseN + siteN;
+    return { total, avg: total > 0 ? (baseAvg * baseN + siteSum) / total : 0 };
+  }, [book, reviews]);
+
   function openReviewModal() {
     setRating(myReview?.rating ?? 0);
     setText(myReview?.review ?? "");
@@ -153,15 +164,7 @@ export default function BookDetail() {
     }
   }
 
-  if (loading) {
-    return (
-      <main className="page">
-        <section className="panel">
-          <p className="panel-sub">Loading...</p>
-        </section>
-      </main>
-    );
-  }
+  if (loading) return <BookDetailSkeleton />;
 
   if (error || !book) {
     return (
@@ -189,6 +192,24 @@ export default function BookDetail() {
 
           <div className="book-info">
             <h1 className="book-title">{book.title}</h1>
+
+            {reviewsLoading ? (
+              <div className="skeleton skeleton-line detail-rating-skel" />
+            ) : (
+              <div className="detail-rating">
+                {ratingSummary.total > 0 ? (
+                  <>
+                    <StarsAverage value={ratingSummary.avg} />
+                    <span className="detail-rating-count">
+                      ({ratingSummary.total.toLocaleString()})
+                    </span>
+                  </>
+                ) : (
+                  <span className="detail-rating-count">No ratings yet</span>
+                )}
+              </div>
+            )}
+
             <h2 className="book-author">{book.author}</h2>
             <p className="book-desc">{book.description}</p>
 
@@ -212,7 +233,7 @@ export default function BookDetail() {
             </button>
           </div>
 
-          {reviewsLoading && <p className="panel-sub">Loading reviews...</p>}
+          {reviewsLoading && <ReviewSkeletonList count={3} />}
           {reviewsError && <p className="auth-error">{reviewsError}</p>}
           {!reviewsLoading && !reviewsError && reviews.length === 0 && (
             <p className="panel-sub">

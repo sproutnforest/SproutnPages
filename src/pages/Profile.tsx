@@ -13,6 +13,7 @@ import { getReviewsByUser } from "../lib/ratings";
 import type { MyReview } from "../lib/ratings";
 import { errorMessage } from "../lib/shelves";
 import LoadingText from "../components/LoadingText";
+import ReviewSkeletonList from "../components/ReviewSkeletonList";
 
 type UserRow = { username: string; email: string };
 
@@ -137,7 +138,9 @@ export default function Profile() {
         <div className="profile-top">
           <div className="avatar">{username.charAt(0).toUpperCase()}</div>
           <div className="profile-info">
-            <h1 className="profile-username">{loading ? <LoadingText> </LoadingText> : username}</h1>
+            <h1 className="profile-username">
+              {loading ? <LoadingText> </LoadingText> : username}
+            </h1>
             <p className="profile-sub">{profile?.email}</p>
           </div>
           <button
@@ -151,30 +154,48 @@ export default function Profile() {
 
         {/* Shelves */}
         <h3 className="profile-heading">My Shelves</h3>
-        <div className="shelf-grid">
-          {shelves.map((shelf) => (
-            <button
-              key={shelf.id}
-              type="button"
-              className="shelf-btn"
-              onClick={() => setOpenShelf(shelf)}
-            >
-              {shelf.name}
-            </button>
-          ))}
-          <button
-            type="button"
-            className="shelf-btn shelf-add"
-            onClick={() => setShowModal(true)}
+        {loading ? (
+          <div
+            className="shelf-grid"
+            role="status"
+            aria-label="Loading shelves"
           >
-            + New shelf
-          </button>
-        </div>
+            {Array.from({ length: 4 }, (_, i) => (
+              <div
+                key={i}
+                className="skeleton skeleton-shelf"
+                aria-hidden="true"
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="shelf-grid">
+            {shelves.map((shelf) => (
+              <button
+                key={shelf.id}
+                type="button"
+                className="shelf-btn"
+                onClick={() => setOpenShelf(shelf)}
+              >
+                {shelf.name}
+              </button>
+            ))}
+            <button
+              type="button"
+              className="shelf-btn shelf-add"
+              onClick={() => setShowModal(true)}
+            >
+              + New shelf
+            </button>
+          </div>
+        )}
 
         {/* Ratings (template for now) */}
         <h3 className="profile-heading">My Ratings</h3>
 
-        {reviewsLoading && <p className="panel-sub"><LoadingText>Loading your reviews </LoadingText></p>}
+        {reviewsLoading && (
+          <ReviewSkeletonList count={3} label="Loading your reviews" />
+        )}
         {reviewsError && <p className="auth-error">{reviewsError}</p>}
         {!reviewsLoading && !reviewsError && myReviews.length === 0 && (
           <p className="panel-sub">You haven't reviewed any books yet.</p>

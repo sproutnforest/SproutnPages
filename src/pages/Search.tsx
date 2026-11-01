@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import BookCard from "../components/Bookcard";
-import LoadingText from "../components/LoadingText";
 import { searchBooks } from "../lib/search";
 import type { Book } from "../lib/qdrant";
+import SkeletonGrid from "../components/SkeletonGrid";
 
 export default function Search() {
   const [params] = useSearchParams();
@@ -62,7 +62,7 @@ export default function Search() {
             Type a title or an author in the search box.
           </p>
         )}
-        {loading && <LoadingText>Searching </LoadingText>}
+        {loading && <SkeletonGrid count={10} label="Searching" />}
         {error && <p className="auth-error">{error}</p>}
 
         {q && !loading && !error && books.length === 0 && (

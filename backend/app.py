@@ -38,6 +38,8 @@ CLASS_VALUES = np.array([3.0, 4.0, 5.0])
 MIN_HISTORY_RATING = 3  # see point 2 above
 N_CANDIDATES = 100
 OVERFETCH = 3  # fetch 300 neighbours so duplicate editions can be dropped
+BEST_MIN_RATINGS = int(os.environ.get("BEST_RATED_MIN_RATINGS", "100"))  # 0 = no minimum
+BEST_POOL = 300
 
 model = lgb.Booster(model_file=MODEL_PATH)
 assert model.num_feature() == 389, "unexpected model"
@@ -235,6 +237,125 @@ def fetch_covers(book_ids: list[str]) -> dict[str, str]:
     )
     return {str(r["book_id"]): r["cover_url"] for r in rows if r.get("cover_url")}
 
+def fetch_books(ids: list[str]) -> dict[str, dict]:
+    """book_id -> payload, for a list of ids."""
+    if not ids:
+        return {}
+    points, _ = qdrant.scroll(
+        COLLECTION,
+        scroll_filter=models.Filter(must=[
+            models.FieldCondition(key="book_id", match=models.MatchAny(any=ids))
+        ]),
+        limit=len(ids),
+        with_payload=BOOK_KEYS + ["b_cnt", "b_avg"],
+        with_vectors=False,
+    )
+    return {str(p.payload["book_id"]): p.payload for p in points}
+
+
+def site_stats(ids: list[str]) -> dict[str, dict]:
+    """Ratings made on the site (from the book_stats view), in chunks to keep URLs short."""
+    out: dict[str, dict] = {}
+    for i in range(0, len(ids), 150):
+        rows = (
+            sb.table("book_stats")
+            .select("book_id, avg_rating, rating_count")
+            .in_("book_id", ids[i : i + 150])
+            .execute()
+            .data
+            or []
+        )
+        for r in rows:
+            out[str(r["book_id"])] = r
+    return out
+
+
+@app.get("/popular")
+def popular(limit: int = 50, days: int = 30, authorization: str | None = Header(default=None)):
+    get_user_id(authorization)
+    limit = max(1, min(limit, 100))
+
+    rows = sb.rpc("popular_books_lately", {"p_days": days, "p_limit": limit}).execute().data or []
+    ids = [str(r["book_id"]) for r in rows]
+    found = fetch_books(ids)
+    covers = fetch_covers(ids)
+
+    books = []
+    for r in rows:  # keeps the order from the database
+        bid = str(r["book_id"])
+        pl = found.get(bid)
+        if not pl:
+            continue  # rated book that isn't in the catalog
+        books.append({
+            **{k: pl.get(k) for k in BOOK_KEYS},
+            "cover_link": covers.get(bid),
+            "rating_count": r["rating_count"],
+            "avg_rating": float(r["avg_rating"]),
+        })
+    return {"books": books}
+
+
+@app.get("/best-rated")
+def best_rated(limit: int = 50, authorization: str | None = Header(default=None)):
+    get_user_id(authorization)
+    limit = max(1, min(limit, 100))
+
+    # A. Books with the best Qdrant (dataset) averages that have enough ratings
+    flt = None
+    if BEST_MIN_RATINGS > 0:
+        flt = models.Filter(must=[
+            models.FieldCondition(key="b_cnt", range=models.Range(gte=BEST_MIN_RATINGS))
+        ])
+    pool, _ = qdrant.scroll(
+        COLLECTION,
+        scroll_filter=flt,
+        order_by=models.OrderBy(key="b_avg", direction=models.Direction.DESC),
+        limit=BEST_POOL,
+        with_payload=BOOK_KEYS + ["b_cnt", "b_avg"],
+        with_vectors=False,
+    )
+    cands = {str(p.payload["book_id"]): p.payload for p in pool}
+
+    # B. Also consider books rated on the site, in case their ratings lift them up
+    top_site = (
+        sb.table("book_stats")
+        .select("book_id, avg_rating, rating_count")
+        .order("rating_count", desc=True)
+        .limit(BEST_POOL)
+        .execute()
+        .data
+        or []
+    )
+    site = {str(r["book_id"]): r for r in top_site}
+    cands.update(fetch_books([b for b in site if b not in cands]))
+    site.update(site_stats([b for b in cands if b not in site]))
+
+    # C. (qdrant avg x qdrant total + site sum) / (qdrant total + site total)
+    scored = []
+    for bid, pl in cands.items():
+        n = float(pl.get("b_cnt", 0))
+        avg = float(pl.get("b_avg", 0))
+        s = site.get(bid)
+        sn = float(s["rating_count"]) if s else 0.0
+        sa = float(s["avg_rating"]) if s else 0.0
+        total = n + sn
+        if total == 0 or total < BEST_MIN_RATINGS:
+            continue
+        scored.append(((avg * n + sa * sn) / total, total, bid))
+
+    scored.sort(key=lambda t: (-t[0], -t[1]))  # best average, then more ratings
+    top = scored[:limit]
+    covers = fetch_covers([b for _, _, b in top])
+    books = [
+        {
+            **{k: cands[b].get(k) for k in BOOK_KEYS},
+            "cover_link": covers.get(b),
+            "avg_rating": round(c, 2),
+            "rating_count": int(t),
+        }
+        for c, t, b in top
+    ]
+    return {"books": books}
 
 @app.get("/search")
 def search(q: str, limit: int = 40, authorization: str | None = Header(default=None)):
@@ -292,7 +413,7 @@ def get_book(book_id: str, authorization: str | None = Header(default=None)):
             models.FieldCondition(key="book_id", match=models.MatchValue(value=book_id))
         ]),
         limit=1,
-        with_payload=BOOK_KEYS,
+        with_payload=BOOK_KEYS + ["b_cnt", "b_avg"],
         with_vectors=False,
     )
     if not points:

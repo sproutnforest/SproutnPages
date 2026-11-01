@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import BookCard from "../components/Bookcard";
+import BookSection from "../components/BookSection";
 import { getRecommendations } from "../lib/recommend";
 import type { RecommendedBook } from "../lib/recommend";
-import LoadingText from "../components/LoadingText";
+import { getBestRated, getPopularBooks } from "../lib/sections";
+import type { SectionBook } from "../lib/sections";
 
 const greetings = [
   {
@@ -36,82 +37,94 @@ function getGreeting(hour: number) {
   return current.text;
 }
 
-export default function Home() {
-  const greeting = getGreeting(new Date().getHours());
+const emptyMessages: Record<string, string> = {
+  no_history: "Rate a few books you liked (3 stars or more) and your picks will show up here.",
+  no_vectors: "Rate a few books you liked (3 stars or more) and your picks will show up here.",
+  cold_start: "We couldn't pick any books right now. Please try again in a moment.",
+  no_candidates: "We've run out of new suggestions. Try rating more books.",
+};
 
-  const [books, setBooks] = useState<RecommendedBook[]>([]);
-  const [reason, setReason] = useState<string | null>(null);
+// loads a list once when the page opens and exposes loading, error and retry
+function useBookList<T>(load: () => Promise<T>) {
+  const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [attempt, setAttempt] = useState(0); // bump to retry
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
-
-    async function load() {
-      setLoading(true);
-      setError("");
-      try {
-        const result = await getRecommendations();
-        if (cancelled) return;
-        setBooks(result.books);
-        setReason(result.reason ?? null);
-      } catch (err) {
-        if (!cancelled)
-          setError(
-            err instanceof Error ? err.message : "Something went wrong.",
-          );
-      } finally {
+    setLoading(true);
+    setError("");
+    load()
+      .then((result) => {
+        if (!cancelled) setData(result);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Something went wrong.");
+      })
+      .finally(() => {
         if (!cancelled) setLoading(false);
-      }
-    }
-
-    load();
+      });
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attempt]);
+
+  return { data, loading, error, retry: () => setAttempt((n) => n + 1) };
+}
+
+export default function Home() {
+  const greeting = getGreeting(new Date().getHours());
+
+  const recs = useBookList(getRecommendations);
+  const popular = useBookList(getPopularBooks);
+  const best = useBookList(getBestRated);
+
+  const recBooks: RecommendedBook[] = recs.data?.books ?? [];
+  const reason = recs.data?.reason ?? null;
 
   return (
     <main className="page">
-      <section className="panel">
-        <div className="panel-head">
-          <h3 className="panel-title">Picked for you</h3>
-          <span className="panel-sep" aria-hidden="true">
-            ~
-          </span>
-          <p className="panel-sub">{greeting}</p>
-        </div>
+      <BookSection
+        title="Picked for you"
+        subtitle={greeting}
+        books={recBooks}
+        loading={recs.loading}
+        loadingText="Finding your next read"
+        error={recs.error}
+        onRetry={recs.retry}
+        emptyMessage={(reason && emptyMessages[reason]) ?? "No recommendations right now. Check back soon."}
+        note={
+          reason === "cold_start" ? (
+            <p className="panel-sub cold-note">
+              Rate a few books you like (3 stars or more) and your picks will start matching your taste.
+            </p>
+          ) : null
+        }
+      />
 
-        {loading && <LoadingText>Finding your next read </LoadingText>}
+      <BookSection
+        title="Popular Books Lately"
+        subtitle="Most rated by readers in the last 30 days."
+        books={(popular.data ?? []) as SectionBook[]}
+        loading={popular.loading}
+        loadingText="Checking what's popular"
+        error={popular.error}
+        onRetry={popular.retry}
+        emptyMessage="No ratings in the last 30 days yet. Rate a book to get this list started!"
+      />
 
-        {error && (
-          <div>
-            <p className="auth-error">{error}</p>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => setAttempt((n) => n + 1)}
-            >
-              Try again
-            </button>
-          </div>
-        )}
-
-        {reason === "cold_start" && books.length > 0 && (
-          <p className="panel-sub cold-note">
-            Rate a few books you like (3 stars or more) and our recommendation will start matching your taste.
-          </p>
-        )}
-
-        {books.length > 0 && (
-          <div className="grid">
-            {books.map((book) => (
-              <BookCard key={book.book_id} book={book} />
-            ))}
-          </div>
-        )}
-      </section>
+      <BookSection
+        title="Best Rated Books"
+        subtitle="Highest average rating from all readers."
+        books={(best.data ?? []) as SectionBook[]}
+        loading={best.loading}
+        loadingText="Finding the best rated"
+        error={best.error}
+        onRetry={best.retry}
+        emptyMessage="Nothing to show yet."
+      />
     </main>
   );
 }
