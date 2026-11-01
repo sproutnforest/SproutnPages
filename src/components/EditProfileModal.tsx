@@ -12,7 +12,13 @@ type Props = {
 
 type Msg = { type: "error" | "ok"; text: string } | null;
 
-export default function EditProfileModal({ userId, email, username, onClose, onUsernameSaved }: Props) {
+export default function EditProfileModal({
+  userId,
+  email,
+  username,
+  onClose,
+  onUsernameSaved,
+}: Props) {
   // Username
   const [newUsername, setNewUsername] = useState(username);
   const [nameMsg, setNameMsg] = useState<Msg>(null);
@@ -43,7 +49,13 @@ export default function EditProfileModal({ userId, email, username, onClose, onU
     setSavingName(false);
 
     if (error) {
-      setNameMsg({ type: "error", text: error.message });
+      setNameMsg({
+        type: "error",
+        text:
+          error.code === "23505"
+            ? "That username is already taken."
+            : error.message,
+      });
       return;
     }
     onUsernameSaved(value);
@@ -55,7 +67,10 @@ export default function EditProfileModal({ userId, email, username, onClose, onU
     setPwMsg(null);
 
     if (newPassword.length < 8) {
-      setPwMsg({ type: "error", text: "New password must be at least 8 characters." });
+      setPwMsg({
+        type: "error",
+        text: "New password must be at least 8 characters.",
+      });
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -63,7 +78,10 @@ export default function EditProfileModal({ userId, email, username, onClose, onU
       return;
     }
     if (newPassword === oldPassword) {
-      setPwMsg({ type: "error", text: "New password must be different from the current one." });
+      setPwMsg({
+        type: "error",
+        text: "New password must be different from the current one.",
+      });
       return;
     }
 
@@ -81,7 +99,9 @@ export default function EditProfileModal({ userId, email, username, onClose, onU
     }
 
     // 2. Set the new one
-    const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
+    const { error: updateError } = await supabase.auth.updateUser({
+      password: newPassword,
+    });
     setSavingPw(false);
 
     if (updateError) {
@@ -103,7 +123,7 @@ export default function EditProfileModal({ userId, email, username, onClose, onU
     setPwMsg(
       error
         ? { type: "error", text: error.message }
-        : { type: "ok", text: `Reset link sent to ${email}.` }
+        : { type: "ok", text: `Reset link sent to ${email}.` },
     );
   }
 
@@ -124,11 +144,21 @@ export default function EditProfileModal({ userId, email, username, onClose, onU
               required
             />
           </label>
-          {nameMsg && <p className={nameMsg.type === "error" ? "auth-error" : "auth-info"}>{nameMsg.text}</p>}
+          {nameMsg && (
+            <p
+              className={nameMsg.type === "error" ? "auth-error" : "auth-info"}
+            >
+              {nameMsg.text}
+            </p>
+          )}
           <button
             type="submit"
             className="btn"
-            disabled={savingName || !newUsername.trim() || newUsername.trim() === username}
+            disabled={
+              savingName ||
+              !newUsername.trim() ||
+              newUsername.trim() === username
+            }
           >
             {savingName ? "Saving..." : "Save username"}
           </button>
@@ -168,7 +198,11 @@ export default function EditProfileModal({ userId, email, username, onClose, onU
               required
             />
           </label>
-          {pwMsg && <p className={pwMsg.type === "error" ? "auth-error" : "auth-info"}>{pwMsg.text}</p>}
+          {pwMsg && (
+            <p className={pwMsg.type === "error" ? "auth-error" : "auth-info"}>
+              {pwMsg.text}
+            </p>
+          )}
           <button type="submit" className="btn" disabled={savingPw}>
             {savingPw ? "Changing..." : "Change password"}
           </button>
