@@ -38,9 +38,10 @@ ORIGINS = [o.strip() for o in os.environ.get("FRONTEND_ORIGINS", "http://localho
 MODEL_PATH = Path(__file__).parent / "lightgbm_book_classifier_v2_3M.txt"
 CLASS_VALUES = np.array([3.0, 4.0, 5.0])
 MIN_HISTORY_RATING = 3
-N_CANDIDATES = 100
+N_CANDIDATES = 100  # how many nearest books the model scores
+N_RESULTS = 50      # how many of them /recommend sends back (the best 50)
 OVERFETCH = 3  # fetch 300 neighbours so duplicate editions can be dropped
-COLD_START_COUNT = 48
+COLD_START_COUNT = 50
 COLD_START_POOL = 300
 BEST_POOL = 300
 BOOK_KEYS = ["book_id", "title", "author", "description", "author_id"]
@@ -237,8 +238,9 @@ def health():
 
 
 @app.get("/recommend")
-def recommend(limit: int = 100, authorization: str | None = Header(default=None)):
+def recommend(limit: int = N_RESULTS, authorization: str | None = Header(default=None)):
     uid = get_user_id(authorization)
+    limit = max(1, min(limit, N_CANDIDATES))
 
     # 1. The user's ratings: everything rated is excluded, rated >= 3 builds the profile
     rows = sb.table("rating").select("book_id, rating").eq("user_id", uid).execute().data
