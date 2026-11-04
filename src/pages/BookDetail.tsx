@@ -15,6 +15,11 @@ import { getCoverUrl } from "../lib/covers";
 import TrashIcon from "../components/TrashIcon";
 import BookDetailSkeleton from "../components/BookDetailSkeleton";
 import ReviewSkeletonList from "../components/ReviewSkeletonList";
+import BookSection from "../components/BookSection";
+import { getSimilarBooks } from "../lib/similar";
+import { useBookList } from "../lib/BookList";
+
+const REVIEWS_PAGE = 5; // reviews shown per click
 
 export default function BookDetail() {
   const { bookId } = useParams<{ bookId: string }>();
@@ -40,6 +45,8 @@ export default function BookDetail() {
 
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  const [reviewsShown, setReviewsShown] = useState(REVIEWS_PAGE);
 
   // Load the book from Qdrant
   useEffect(() => {
@@ -101,6 +108,17 @@ export default function BookDetail() {
     return () => {
       cancelled = true;
     };
+  }, [bookId]);
+
+  const similar = useBookList(
+    () => (bookId ? getSimilarBooks(bookId) : Promise.resolve([])),
+    [bookId],
+  );
+
+  // when you open another book (for example from the similar list), start fresh at the top
+  useEffect(() => {
+    setReviewsShown(REVIEWS_PAGE);
+    window.scrollTo(0, 0);
   }, [bookId]);
 
   const myReview = reviews.find((r) => r.user_id === userId);
@@ -242,20 +260,56 @@ export default function BookDetail() {
           )}
 
           {reviews.length > 0 && (
-            <ul className="review-list">
-              {reviews.map((r) => (
-                <ReviewCard
-                  key={r.id}
-                  heading={r.reviewer?.username ?? "Unknown reader"}
-                  createdAt={r.created_at}
-                  rating={r.rating}
-                  text={r.review}
-                />
-              ))}
-            </ul>
+            <>
+              <ul className="review-list">
+                {reviews.slice(0, reviewsShown).map((r) => (
+                  <ReviewCard
+                    key={r.id}
+                    heading={r.reviewer?.username ?? "Unknown reader"}
+                    createdAt={r.created_at}
+                    rating={r.rating}
+                    text={r.review}
+                  />
+                ))}
+              </ul>
+
+              {reviews.length > REVIEWS_PAGE && (
+                <div className="view-more-row">
+                  {reviewsShown < reviews.length ? (
+                    <button
+                      type="button"
+                      className="link-btn view-more"
+                      onClick={() => setReviewsShown((n) => n + REVIEWS_PAGE)}
+                    >
+                      View more reviews ({reviews.length - reviewsShown} more)
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="link-btn view-more"
+                      onClick={() => setReviewsShown(REVIEWS_PAGE)}
+                    >
+                      Show less
+                    </button>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </div>
       </section>
+
+      <BookSection
+        key={bookId}
+        title="Similar books"
+        subtitle="Books with a similar feel to this one."
+        books={similar.data ?? []}
+        loading={similar.loading}
+        loadingText="Finding similar books"
+        error={similar.error}
+        onRetry={similar.retry}
+        emptyMessage="We couldn't find similar books for this one."
+      />
 
       {showModal && (
         <div className="modal-backdrop" onClick={() => setShowModal(false)}>

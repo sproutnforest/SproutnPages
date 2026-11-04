@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
 import BookSection from "../components/BookSection";
 import { getRecommendations } from "../lib/recommend";
 import type { RecommendedBook } from "../lib/recommend";
 import { getBestRated, getPopularBooks } from "../lib/sections";
 import type { SectionBook } from "../lib/sections";
+import { useBookList } from "../lib/BookList";
 
 const greetings = [
   {
@@ -43,36 +43,6 @@ const emptyMessages: Record<string, string> = {
   cold_start: "We couldn't pick any books right now. Please try again in a moment.",
   no_candidates: "We've run out of new suggestions. Try rating more books.",
 };
-
-// loads a list once when the page opens and exposes loading, error and retry
-function useBookList<T>(load: () => Promise<T>) {
-  const [data, setData] = useState<T | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [attempt, setAttempt] = useState(0);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError("");
-    load()
-      .then((result) => {
-        if (!cancelled) setData(result);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Something went wrong.");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [attempt]);
-
-  return { data, loading, error, retry: () => setAttempt((n) => n + 1) };
-}
 
 export default function Home() {
   const greeting = getGreeting(new Date().getHours());

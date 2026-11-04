@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import { Link } from "react-router-dom";
 import AuthLayout from "../components/AuthLayout";
 import { supabase } from "../lib/supabase";
+import PasswordInput from "../components/PasswordInput";
 
 export default function Signup() {
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -127,20 +128,20 @@ export default function Signup() {
         </label>
         <label>
           Password
-          <input
-            type="password"
+          <PasswordInput
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            autoComplete="new-password"
             minLength={8}
             required
           />
         </label>
         <label>
           Confirm password
-          <input
-            type="password"
+          <PasswordInput
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
+            autoComplete="new-password"
             required
           />
         </label>

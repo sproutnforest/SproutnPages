@@ -462,6 +462,50 @@ header nav a,
   color: var(--orange);
 }
 
+/*----------password----------*/
+.password-field {
+  position: relative;
+  display: flex;
+}
+
+.password-field input {
+  width: 100%;
+  padding-right: 2.9rem; /* room for the icon so long passwords don't run under it */
+}
+
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 0.5rem;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--green);
+  opacity: 0.65;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.password-toggle:hover {
+  opacity: 1;
+}
+
+.password-toggle:focus-visible {
+  outline: 2px solid var(--orange);
+}
+
+.password-field input::-ms-reveal,
+.password-field input::-ms-clear {
+  display: none;
+}
+
 /*-----------Book Detail----------*/
 .book-panel {
   max-width: 93vw;
@@ -556,6 +600,15 @@ header nav a,
   overflow: hidden;
   white-space: nowrap;
   color: var(--orange);
+}
+
+/*-----------book panel----------*/
+.panel + .home-section {
+  margin-top: 1.5rem;
+}
+
+.reviews .view-more-row {
+  margin-top: 1rem;
 }
 
 /* ---- shelf ----- */

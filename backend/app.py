@@ -40,6 +40,8 @@ CLASS_VALUES = np.array([3.0, 4.0, 5.0])
 MIN_HISTORY_RATING = 3
 N_CANDIDATES = 100  # how many nearest books the model scores
 N_RESULTS = 50      # how many of them /recommend sends back (the best 50)
+N_SIMILAR_CANDIDATES = 50  # nearest books the model scores for "similar books"
+N_SIMILAR_RESULTS = 25     # how many of them /similar sends back
 OVERFETCH = 3  # fetch 300 neighbours so duplicate editions can be dropped
 COLD_START_COUNT = 50
 COLD_START_POOL = 300
@@ -231,6 +233,48 @@ def cold_start(rated_ids: list[str], limit: int) -> dict:
     return {"books": books, "reason": "cold_start"}
 
 
+def score_candidates(cands, vector, user_total: float, user_avg: float):
+    """Shared by /recommend and /similar.
+    Builds the 389 features (same columns, same order as training) and ranks the candidates.
+    `vector` fills the last 384 columns: the user's profile for /recommend,
+    or the book's own vector for /similar."""
+    ids = [str(h.payload["book_id"]) for h in cands]
+    extras = book_extras(ids)   # dataset stats + covers (Supabase book_cover)
+    site = site_stats(ids)      # ratings made on this site
+
+    cos = np.array([h.score for h in cands], dtype=np.float32)
+    X = np.zeros((len(cands), 389), dtype=np.float32)
+    for i in range(len(cands)):
+        X[i, 0], X[i, 1] = book_stats(extras.get(ids[i]), site.get(ids[i]))
+    X[:, 2] = user_total
+    X[:, 3] = user_avg
+    X[:, 4] = cos
+    X[:, 5:] = vector
+
+    probs = model.predict(X)  # shape (n, 3)
+    pred_class = probs.argmax(axis=1)
+    expected = probs @ CLASS_VALUES
+
+    # sort by predicted rating, then cosine (np.lexsort: the last key is the main one)
+    primary = pred_class if RANK_BY == "class" else expected
+    order = np.lexsort((-cos, -primary))
+    return ids, extras, cos, pred_class, expected, order
+
+
+def build_books(cands, ids, extras, cos, pred_class, expected, order, limit: int) -> list[dict]:
+    keys = ("book_id", "title", "author", "description", "author_id")
+    return [
+        {
+            **{k: cands[i].payload.get(k) for k in keys},
+            "cover_link": cover_of(extras, ids[i]),
+            "predicted_rating": int(CLASS_VALUES[pred_class[i]]),
+            "expected_rating": round(float(expected[i]), 3),
+            "cosine": round(float(cos[i]), 4),
+        }
+        for i in order[:limit]
+    ]
+
+
 # ---------------------------------------------------------------- endpoints
 @app.get("/")
 def health():
@@ -302,41 +346,65 @@ def recommend(limit: int = N_RESULTS, authorization: str | None = Header(default
     if not cands:
         return {"books": [], "reason": "no_candidates"}
 
-    # 4. Features: same 389 columns, same order as training
-    ids = [str(h.payload["book_id"]) for h in cands]
-    extras = book_extras(ids)   # dataset stats + covers (Supabase book_cover)
-    site = site_stats(ids)      # ratings made on this site
+    # 4-6. Features, LightGBM prediction, ranking (shared with /similar)
+    ids, extras, cos, pred_class, expected, order = score_candidates(cands, profile, user_total, user_avg)
+    return {"books": build_books(cands, ids, extras, cos, pred_class, expected, order, limit)}
 
-    cos = np.array([h.score for h in cands], dtype=np.float32)
-    X = np.zeros((len(cands), 389), dtype=np.float32)
-    for i in range(len(cands)):
-        X[i, 0], X[i, 1] = book_stats(extras.get(ids[i]), site.get(ids[i]))
-    X[:, 2] = user_total
-    X[:, 3] = user_avg
-    X[:, 4] = cos
-    X[:, 5:] = profile
 
-    probs = model.predict(X)  # shape (n, 3)
-    pred_class = probs.argmax(axis=1)
-    expected = probs @ CLASS_VALUES
+@app.get("/similar/{book_id}")
+def similar(book_id: str, limit: int = N_SIMILAR_RESULTS, authorization: str | None = Header(default=None)):
+    """Books similar to one book: the same pipeline as /recommend, with the book's own vector
+    in place of the user's profile vector."""
+    uid = get_user_id(authorization)
+    limit = max(1, min(limit, N_SIMILAR_CANDIDATES))
 
-    # 5. Sort by predicted rating, then cosine (np.lexsort: the last key is the main one)
-    primary = pred_class if RANK_BY == "class" else expected
-    order = np.lexsort((-cos, -primary))
+    # 1. The vector of this book
+    pts, _ = qdrant.scroll(
+        COLLECTION,
+        scroll_filter=models.Filter(must=[
+            models.FieldCondition(key="book_id", match=models.MatchValue(value=book_id))
+        ]),
+        limit=1,
+        with_vectors=True,
+        with_payload=["book_id", "title", "author"],
+    )
+    if not pts or pts[0].vector is None:
+        raise HTTPException(404, "Book not found")
+    src = pts[0]
+    vec = np.asarray(first_vector(src.vector), dtype=np.float32)
 
-    # 6. Send back
-    keys = ("book_id", "title", "author", "description", "author_id")
-    books = [
-        {
-            **{k: cands[i].payload.get(k) for k in keys},
-            "cover_link": cover_of(extras, ids[i]),
-            "predicted_rating": int(CLASS_VALUES[pred_class[i]]),
-            "expected_rating": round(float(expected[i]), 3),
-            "cosine": round(float(cos[i]), 4),
-        }
-        for i in order[:limit]
-    ]
-    return {"books": books}
+    # 2. Nearest books, without the book itself and without its other editions
+    hits = qdrant.query_points(
+        COLLECTION,
+        query=vec.tolist(),
+        query_filter=models.Filter(must_not=[
+            models.FieldCondition(key="book_id", match=models.MatchValue(value=book_id))
+        ]),
+        limit=N_SIMILAR_CANDIDATES * OVERFETCH,
+        with_payload=BOOK_KEYS,
+    ).points
+
+    seen, cands = {work_key(src.payload)}, []
+    for h in hits:  # already best score first
+        k = work_key(h.payload)
+        if k in seen:
+            continue
+        seen.add(k)
+        cands.append(h)
+        if len(cands) == N_SIMILAR_CANDIDATES:
+            break
+    if not cands:
+        return {"books": []}
+
+    # 3. The user's own stats, as in /recommend (training defaults when they have no liked books)
+    rows = sb.table("rating").select("rating").eq("user_id", uid).execute().data or []
+    liked = [float(r["rating"]) for r in rows if r["rating"] >= MIN_HISTORY_RATING]
+    user_total = float(len(liked))
+    user_avg = float(np.mean(liked)) if liked else GLOBAL_AVG
+
+    # 4. Same features and ranking as /recommend, with the book's vector as the "profile"
+    ids, extras, cos, pred_class, expected, order = score_candidates(cands, vec, user_total, user_avg)
+    return {"books": build_books(cands, ids, extras, cos, pred_class, expected, order, limit)}
 
 
 @app.get("/search")
