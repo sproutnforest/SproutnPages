@@ -5,3 +5,5 @@ qdrant-client
 supabase
 httpx
 python-dotenv
+onnxruntime
+tokenizers

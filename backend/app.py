@@ -233,16 +233,21 @@ def cold_start(rated_ids: list[str], limit: int) -> dict:
     return {"books": books, "reason": "cold_start"}
 
 
-def score_candidates(cands, vector, user_total: float, user_avg: float):
-    """Shared by /recommend and /similar.
+def score_candidates(cands, vector, user_total: float, user_avg: float, cos=None, tiebreak=None):
+    """Shared by /recommend, /similar and /explore.
     Builds the 389 features (same columns, same order as training) and ranks the candidates.
-    `vector` fills the last 384 columns: the user's profile for /recommend,
-    or the book's own vector for /similar."""
+    `vector` fills the last 384 columns: the user's profile for /recommend and /explore,
+    or the book's own vector for /similar.
+    `cos` is the cosine feature (default: the Qdrant score); `tiebreak` orders equal predictions
+    (default: the cosine)."""
     ids = [str(h.payload["book_id"]) for h in cands]
     extras = book_extras(ids)   # dataset stats + covers (Supabase book_cover)
     site = site_stats(ids)      # ratings made on this site
 
-    cos = np.array([h.score for h in cands], dtype=np.float32)
+    if cos is None:
+        cos = np.array([h.score for h in cands], dtype=np.float32)
+    if tiebreak is None:
+        tiebreak = cos
     X = np.zeros((len(cands), 389), dtype=np.float32)
     for i in range(len(cands)):
         X[i, 0], X[i, 1] = book_stats(extras.get(ids[i]), site.get(ids[i]))
@@ -257,7 +262,7 @@ def score_candidates(cands, vector, user_total: float, user_avg: float):
 
     # sort by predicted rating, then cosine (np.lexsort: the last key is the main one)
     primary = pred_class if RANK_BY == "class" else expected
-    order = np.lexsort((-cos, -primary))
+    order = np.lexsort((-tiebreak, -primary))
     return ids, extras, cos, pred_class, expected, order
 
 
@@ -275,29 +280,64 @@ def build_books(cands, ids, extras, cos, pred_class, expected, order, limit: int
     ]
 
 
-# ---------------------------------------------------------------- endpoints
-@app.get("/")
-def health():
-    return {"status": "ok"}
+def nearest_books(cands, limit: int) -> list[dict]:
+    """The closest candidates as they are (no model), for when there is no taste profile."""
+    top = cands[:limit]
+    ids = [str(h.payload["book_id"]) for h in top]
+    extras = book_extras(ids)
+    keys = ("book_id", "title", "author", "description", "author_id")
+    return [
+        {
+            **{k: h.payload.get(k) for k in keys},
+            "cover_link": cover_of(extras, ids[i]),
+            "cosine": round(float(h.score), 4),
+        }
+        for i, h in enumerate(top)
+    ]
 
 
-@app.get("/recommend")
-def recommend(limit: int = N_RESULTS, authorization: str | None = Header(default=None)):
-    uid = get_user_id(authorization)
-    limit = max(1, min(limit, N_CANDIDATES))
+STOPWORDS = set("""
+a about above after again against all also am an and any are as at be because been before being below
+between both but by can could did do does doing down during each few for from further had has have having
+he her here hers him his how i if in into is it its just like me more most my no nor not now of off on once
+only or other our out over own same she should so some such than that the their them then there these they
+this those through to too under until up very was we were what when where which while who whom why will with
+would you your yours
+""".split())
+FILLER = set("""
+want wanna read reading book books novel novels looking look find recommend recommendation recommendations
+suggest something anything someone give please need enjoy kind type sort thing things lot really maybe bit
+turn turns turned seem seems actually basically kinda sorta
+""".split())
 
-    # 1. The user's ratings: everything rated is excluded, rated >= 3 builds the profile
-    rows = sb.table("rating").select("book_id, rating").eq("user_id", uid).execute().data
+
+def extract_keywords(text: str, max_words: int = 30) -> list[str]:
+    """Keeps the meaningful words of a description ("magical", "circus", "dark"), in order."""
+    words, seen = [], set()
+    for w in re.findall(r"[a-z0-9']+", str(text).lower()):
+        w = re.sub(r"'s$", "", w).replace("'", "")
+        if len(w) < 3 or w in STOPWORDS or w in FILLER or w in seen:
+            continue
+        seen.add(w)
+        words.append(w)
+    return words[:max_words]
+
+
+def load_user_profile(uid: str):
+    """The user's ratings turned into a taste profile.
+    Returns (rated_ids, rated_points, profile, user_total, user_avg).
+    profile is None when the user has no liked books (rated >= 3) or none of them has a vector;
+    user_total / user_avg are then the training defaults."""
+    rows = sb.table("rating").select("book_id, rating").eq("user_id", uid).execute().data or []
     rated_ids = [str(r["book_id"]) for r in rows]
     history = {
         str(r["book_id"]): float(r["rating"])
         for r in rows
         if r["rating"] >= MIN_HISTORY_RATING
     }
-    if not history:
-        return cold_start(rated_ids, limit)
+    if not rated_ids:
+        return rated_ids, [], None, 0.0, GLOBAL_AVG
 
-    # 2. Their vectors -> rating-weighted profile
     rated_points, _ = qdrant.scroll(
         COLLECTION,
         scroll_filter=models.Filter(must=[
@@ -314,13 +354,29 @@ def recommend(limit: int = N_RESULTS, authorization: str | None = Header(default
             vecs.append(first_vector(p.vector))
             weights.append(w)
     if not vecs:
-        return cold_start(rated_ids, limit)
+        return rated_ids, rated_points, None, 0.0, GLOBAL_AVG
+
     V = np.asarray(vecs, dtype=np.float32)
     W = np.asarray(weights, dtype=np.float32)
     profile = (W[:, None] * V).sum(axis=0) / W.sum()
+    return rated_ids, rated_points, profile, float(len(history)), float(np.mean(list(history.values())))
 
-    user_total = float(len(history))
-    user_avg = float(np.mean(list(history.values())))
+
+# ---------------------------------------------------------------- endpoints
+@app.get("/")
+def health():
+    return {"status": "ok"}
+
+
+@app.get("/recommend")
+def recommend(limit: int = N_RESULTS, authorization: str | None = Header(default=None)):
+    uid = get_user_id(authorization)
+    limit = max(1, min(limit, N_CANDIDATES))
+
+    # 1-2. The user's taste profile (rating-weighted mean of the vectors of the books they liked)
+    rated_ids, rated_points, profile, user_total, user_avg = load_user_profile(uid)
+    if profile is None:
+        return cold_start(rated_ids, limit)
 
     # 3. Nearest books the user hasn't rated, then drop duplicate editions
     hits = qdrant.query_points(
@@ -399,12 +455,78 @@ def similar(book_id: str, limit: int = N_SIMILAR_RESULTS, authorization: str | N
     # 3. The user's own stats, as in /recommend (training defaults when they have no liked books)
     rows = sb.table("rating").select("rating").eq("user_id", uid).execute().data or []
     liked = [float(r["rating"]) for r in rows if r["rating"] >= MIN_HISTORY_RATING]
+    if not liked:
+        # no taste to personalise with: simply the closest books, no model
+        return {"books": nearest_books(cands, limit)}
     user_total = float(len(liked))
-    user_avg = float(np.mean(liked)) if liked else GLOBAL_AVG
+    user_avg = float(np.mean(liked))
 
     # 4. Same features and ranking as /recommend, with the book's vector as the "profile"
     ids, extras, cos, pred_class, expected, order = score_candidates(cands, vec, user_total, user_avg)
     return {"books": build_books(cands, ids, extras, cos, pred_class, expected, order, limit)}
+
+
+@app.get("/explore")
+def explore(q: str, limit: int = N_RESULTS, authorization: str | None = Header(default=None)):
+    """Books that match a free-text description, e.g. "a magical circus where the game turns dark"."""
+    uid = get_user_id(authorization)
+    limit = max(1, min(limit, N_CANDIDATES))
+
+    # 1. Keep only the meaningful words, then turn them into a vector (same space as the books)
+    words = extract_keywords(q)
+    if len(words) < 2:
+        return {"books": [], "keywords": words, "reason": "too_short"}
+    from embedder import embed  # loaded on first use, so the other endpoints stay light
+    query_vec = embed(" ".join(words))
+
+    # 2. The user's taste profile, if they have liked books
+    rated_ids, rated_points, profile, user_total, user_avg = load_user_profile(uid)
+    personalized = profile is not None
+    want = N_CANDIDATES if personalized else limit   # 100 to rank with the model, or just the closest 50
+
+    # 3. Nearest books to the description (not already rated), one entry per book
+    hits = qdrant.query_points(
+        COLLECTION,
+        query=query_vec.tolist(),
+        query_filter=models.Filter(must_not=[
+            models.FieldCondition(key="book_id", match=models.MatchAny(any=rated_ids))
+        ]) if rated_ids else None,
+        limit=want * OVERFETCH,
+        with_payload=BOOK_KEYS,
+        with_vectors=personalized,
+    ).points
+
+    read_works = {work_key(p.payload) for p in rated_points}
+    seen, cands = set(), []
+    for h in hits:  # already best score first
+        k = work_key(h.payload)
+        if k in read_works or k in seen:
+            continue
+        seen.add(k)
+        cands.append(h)
+        if len(cands) == want:
+            break
+    if not cands:
+        return {"books": [], "keywords": words, "reason": "no_candidates"}
+
+    if not personalized:
+        return {"books": nearest_books(cands, limit), "keywords": words, "personalized": False}
+
+    # 4. Personalised: the model predicts what THIS user would rate each book
+    #    (cosine = taste profile vs. book, as in training); the description breaks ties.
+    V = np.asarray([first_vector(h.vector) for h in cands], dtype=np.float32)
+    denom = np.maximum(np.linalg.norm(V, axis=1) * np.linalg.norm(profile), 1e-8)
+    cos_user = ((V @ profile) / denom).astype(np.float32)
+    desc_sim = np.array([h.score for h in cands], dtype=np.float32)
+
+    ids, extras, cos, pred_class, expected, order = score_candidates(
+        cands, profile, user_total, user_avg, cos=cos_user, tiebreak=desc_sim
+    )
+    return {
+        "books": build_books(cands, ids, extras, cos, pred_class, expected, order, limit),
+        "keywords": words,
+        "personalized": True,
+    }
 
 
 @app.get("/search")
