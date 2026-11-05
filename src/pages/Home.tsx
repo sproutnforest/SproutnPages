@@ -4,6 +4,7 @@ import type { RecommendedBook } from "../lib/recommend";
 import { getBestRated, getPopularBooks } from "../lib/sections";
 import type { SectionBook } from "../lib/sections";
 import { useBookList } from "../lib/BookList";
+import ExploreChat from "../components/ExploreChat";
 
 const greetings = [
   {
@@ -38,9 +39,12 @@ function getGreeting(hour: number) {
 }
 
 const emptyMessages: Record<string, string> = {
-  no_history: "Rate a few books you liked (3 stars or more) and your picks will show up here.",
-  no_vectors: "Rate a few books you liked (3 stars or more) and your picks will show up here.",
-  cold_start: "We couldn't pick any books right now. Please try again in a moment.",
+  no_history:
+    "Rate a few books you liked (3 stars or more) and your picks will show up here.",
+  no_vectors:
+    "Rate a few books you liked (3 stars or more) and your picks will show up here.",
+  cold_start:
+    "We couldn't pick any books right now. Please try again in a moment.",
   no_candidates: "We've run out of new suggestions. Try rating more books.",
 };
 
@@ -64,15 +68,21 @@ export default function Home() {
         loadingText="Finding your next read"
         error={recs.error}
         onRetry={recs.retry}
-        emptyMessage={(reason && emptyMessages[reason]) ?? "No recommendations right now. Check back soon."}
+        emptyMessage={
+          (reason && emptyMessages[reason]) ??
+          "No recommendations right now. Check back soon."
+        }
         note={
           reason === "cold_start" ? (
             <p className="panel-sub cold-note">
-              Rate a few books you like (3 stars or more) and your picks will start matching your taste.
+              Rate a few books you like (3 stars or more) and your picks will
+              start matching your taste.
             </p>
           ) : null
         }
       />
+
+      <ExploreChat />
 
       <BookSection
         title="Popular Books Lately"
