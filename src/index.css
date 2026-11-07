@@ -1247,50 +1247,31 @@ header nav a,
 }
 
 /*------------Chat------------*/
-.chat {
-  display: flex;
-  flex-direction: column;
-  gap: 0.8rem;
-  margin-bottom: 1.5rem;
+/* "Explore Further": title with a plain line under it */
+.panel-head.tight {
+  margin-bottom: 0.3rem;
 }
 
-.bubble {
-  max-width: min(560px, 88%);
-  padding: 0.8rem 1.1rem;
-  border-radius: 18px;
-  line-height: 1.45;
+.explore-sub {
+  margin: 0 0 1.2rem;
+  font-size: 0.95rem;
+  color: var(--cream);
+  opacity: 0.9;
 }
 
-.bubble p {
-  margin: 0 0 0.5rem;
-}
-
-.bubble p:last-child {
-  margin-bottom: 0;
-}
-
-/* from the left: us */
-.bubble-bot {
-  align-self: flex-start;
-  background: var(--cream);
-  color: var(--green);
-  border-bottom-left-radius: 4px;
-}
-
-/* from the right: the reader's input */
-.bubble-user {
-  align-self: flex-end;
+/* the input on the left, still a rounded box */
+.explore-input {
   display: flex;
   align-items: flex-end;
   gap: 0.6rem;
-  width: min(560px, 88%);
+  width: min(640px, 100%);
   padding: 0.6rem 0.6rem 0.6rem 1.1rem;
   background: var(--orange);
   color: var(--green);
-  border-bottom-right-radius: 4px;
+  border-radius: 18px;
 }
 
-.bubble-user textarea {
+.explore-input textarea {
   flex: 1;
   min-width: 0;
   padding: 0.3rem 0;
@@ -1305,37 +1286,24 @@ header nav a,
   overflow-y: auto;
 }
 
-.bubble-user textarea::placeholder {
+.explore-input textarea::placeholder {
   color: var(--green);
   opacity: 0.55;
 }
 
-.send-btn {
-  flex: 0 0 2.2rem;
-  height: 2.2rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 50%;
-  background: var(--green);
+/* the result text is plain text on the panel */
+.explore-note {
+  margin: 1rem 0 1.5rem;
   color: var(--cream);
-  cursor: pointer;
 }
 
-.send-btn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
+.explore-note p {
+  margin: 0 0 0.5rem;
 }
 
-.chip {
-  display: inline-block;
-  margin: 0.15rem 0.3rem 0.15rem 0;
-  padding: 0.1rem 0.7rem;
-  border-radius: 999px;
-  background: var(--clay);
-  color: var(--cream);
+.explore-hint {
   font-size: 0.9rem;
+  opacity: 0.85;
 }
 
 /* ---------- Mobile ---------- */
