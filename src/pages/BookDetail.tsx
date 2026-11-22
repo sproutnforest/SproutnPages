@@ -11,7 +11,7 @@ import { deleteReview, getReviewsForBook, saveReview } from "../lib/ratings";
 import type { BookReview } from "../lib/ratings";
 import { errorMessage } from "../lib/shelves";
 import BookCover from "../components/BookCover";
-import { getCoverUrl } from "../lib/covers";
+import { getBookExtras } from "../lib/covers";
 import TrashIcon from "../components/TrashIcon";
 import BookDetailSkeleton from "../components/BookDetailSkeleton";
 import ReviewSkeletonList from "../components/ReviewSkeletonList";
@@ -42,6 +42,8 @@ export default function BookDetail() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
+  const [genres, setGenres] = useState<string[]>([]);
+  const [extrasLoading, setExtrasLoading] = useState(true);
 
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -100,9 +102,14 @@ export default function BookDetail() {
     if (!bookId) return;
     let cancelled = false;
     setCoverUrl(null);
+    setGenres([]);
+    setExtrasLoading(true);
 
-    getCoverUrl(bookId).then((url) => {
-      if (!cancelled) setCoverUrl(url);
+    getBookExtras(bookId).then((extras) => {
+      if (cancelled) return;
+      setCoverUrl(extras.coverUrl);
+      setGenres(extras.genres);
+      setExtrasLoading(false);
     });
 
     return () => {
@@ -229,6 +236,25 @@ export default function BookDetail() {
             )}
 
             <h2 className="book-author">{book.author}</h2>
+
+            {extrasLoading ? (
+              <div className="genre-chips" aria-hidden="true">
+                <span className="skeleton skeleton-chip" />
+                <span className="skeleton skeleton-chip" />
+                <span className="skeleton skeleton-chip" />
+              </div>
+            ) : (
+              genres.length > 0 && (
+                <div className="genre-chips">
+                  {genres.map((g) => (
+                    <span className="chip" key={g}>
+                      {g.replace(/-/g, " ")}
+                    </span>
+                  ))}
+                </div>
+              )
+            )}
+
             <p className="book-desc">{book.description}</p>
 
             <div className="book-actions">
