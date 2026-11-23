@@ -9,6 +9,7 @@ export type Book = {
   cover_link?: string | null;
   b_cnt?: number;
   b_avg?: number;
+  genres?: string[];
 };
 
 const API = import.meta.env.VITE_API_URL as string;

@@ -104,6 +104,52 @@ header nav a,
   border-color: var(--green);
 }
 
+.genre-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0 0 1.5rem;
+}
+
+.genre-btn {
+  padding: 0.25rem 0.9rem;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--clay);
+  color: var(--cream);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
+}
+
+.genre-btn:hover {
+  opacity: 0.85;
+}
+
+/* the chosen genre */
+.genre-btn.is-active {
+  background: var(--orange);
+  color: var(--green);
+  border-color: var(--cream);
+  font-weight: bold;
+  opacity: 1;
+}
+
+/* every other genre while one is chosen */
+.genre-btn.is-dim {
+  opacity: 0.4;
+}
+
+.genre-btn.is-dim:hover {
+  opacity: 0.75;
+}
+
+.genre-btn:focus-visible {
+  outline: 2px solid var(--cream);
+  outline-offset: 2px;
+}
+
 /* ---------- Page panel ---------- */
 .page {
   padding: 0 1.5rem 4rem;

@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import BookCard from "../components/Bookcard";
+import SkeletonGrid from "../components/SkeletonGrid";
 import { searchBooks } from "../lib/search";
 import type { Book } from "../lib/qdrant";
-import SkeletonGrid from "../components/SkeletonGrid";
 
 export default function Search() {
   const [params] = useSearchParams();
@@ -12,8 +12,10 @@ export default function Search() {
   const [books, setBooks] = useState<Book[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [selected, setSelected] = useState<string | null>(null); // the active genre, if any
 
   useEffect(() => {
+    setSelected(null); // every new search starts unfiltered
     if (!q) {
       setBooks([]);
       return;
@@ -41,6 +43,21 @@ export default function Search() {
       cancelled = true;
     };
   }, [q]);
+
+  // every different genre across all the results, the most common first
+  const genreList = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const b of books) {
+      for (const g of b.genres ?? []) counts.set(g, (counts.get(g) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([g]) => g);
+  }, [books]);
+
+  const shown = selected
+    ? books.filter((b) => b.genres?.includes(selected))
+    : books;
 
   return (
     <main className="page">
@@ -71,9 +88,33 @@ export default function Search() {
           </p>
         )}
 
-        {books.length > 0 && (
+        {!loading && genreList.length > 0 && (
+          <div
+            className="genre-filter"
+            role="group"
+            aria-label="Filter by genre"
+          >
+            {genreList.map((g) => {
+              const active = selected === g;
+              const dimmed = selected !== null && !active;
+              return (
+                <button
+                  key={g}
+                  type="button"
+                  className={`genre-btn${active ? " is-active" : ""}${dimmed ? " is-dim" : ""}`}
+                  aria-pressed={active}
+                  onClick={() => setSelected(active ? null : g)}
+                >
+                  {g.replace(/-/g, " ")}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {shown.length > 0 && (
           <div className="grid">
-            {books.map((book) => (
+            {shown.map((book) => (
               <BookCard key={book.book_id} book={book} />
             ))}
           </div>

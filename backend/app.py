@@ -93,13 +93,13 @@ def work_key(payload: dict) -> str:
     return f"{title}|{author}" if title else f"id:{payload.get('book_id')}"
 
 
-def book_extras(ids: list[str]) -> dict[str, dict]:
+def book_extras(ids: list[str], columns: str = "cover_url, b_cnt, b_avg") -> dict[str, dict]:
     """book_id -> {cover_url, b_cnt, b_avg}, read from the Supabase book_cover table."""
     out: dict[str, dict] = {}
-    for i in range(0, len(ids), 150):  # chunks keep the request URL short
+    for i in range(0, len(ids), 150):
         rows = (
             sb.table("book_cover")
-            .select("book_id, cover_url, b_cnt, b_avg")
+            .select(f"book_id, {columns}")
             .in_("book_id", ids[i : i + 150])
             .execute()
             .data
@@ -556,7 +556,7 @@ def search(q: str, limit: int = 40, authorization: str | None = Header(default=N
     )
 
     # popularity (rating count) and covers come from Supabase
-    extras = book_extras([str(p.payload["book_id"]) for p in points])
+    extras = book_extras([str(p.payload["book_id"]) for p in points], "cover_url, b_cnt, b_avg, genres")
     for p in points:
         p.payload["b_cnt"] = (extras.get(str(p.payload["book_id"])) or {}).get("b_cnt") or 0
 
@@ -570,6 +570,7 @@ def search(q: str, limit: int = 40, authorization: str | None = Header(default=N
         seen.add(k)
         item = {key: pl.get(key) for key in ("book_id", "title", "author", "author_id")}
         item["cover_link"] = cover_of(extras, str(pl["book_id"]))
+        item["genres"] = (extras.get(str(pl["book_id"])) or {}).get("genres") or []
         results.append(item)
         if len(results) == limit:
             break
