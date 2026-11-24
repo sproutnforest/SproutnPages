@@ -47,6 +47,18 @@ COLD_START_COUNT = 50
 COLD_START_POOL = 300
 BEST_POOL = 300
 BOOK_KEYS = ["book_id", "title", "author", "description", "author_id"]
+LIGHT_KEYS = ["book_id", "title", "author", "author_id"]  # enough for a book card (no long description)
+
+# the genres the website offers, exactly as they are stored in book_cover.genres
+ALLOWED_GENRES = {
+    "fiction", "fantasy", "paranormal", "children", "crime", "mystery", "thriller", "young-adult",
+    "biography", "historical fiction", "history", "non-fiction", "romance", "comics", "graphic", "poetry",
+}
+# Genres live in Supabase, not in Qdrant, so a genre search looks through the nearest books in
+# widening steps and only goes further when there are not enough matches yet.
+GENRE_FETCH_STEPS = (300, 1200, 3600)
+COLD_START_GENRE_STEPS = (1500, 6000)  # random books to look through for a new user's genre picks
+GENRE_CHUNK = 800                      # ids per database call (the API returns at most 1000 rows)
 
 # ---------------------------------------------------------------- clients
 model = lgb.Booster(model_file=str(MODEL_PATH))
@@ -94,9 +106,10 @@ def work_key(payload: dict) -> str:
 
 
 def book_extras(ids: list[str], columns: str = "cover_url, b_cnt, b_avg") -> dict[str, dict]:
-    """book_id -> {cover_url, b_cnt, b_avg}, read from the Supabase book_cover table."""
+    """book_id -> {cover_url, b_cnt, b_avg, ...}, read from the Supabase book_cover table.
+    `columns` lets an endpoint ask for more (the search also wants genres)."""
     out: dict[str, dict] = {}
-    for i in range(0, len(ids), 150):
+    for i in range(0, len(ids), 150):  # chunks keep the request URL short
         rows = (
             sb.table("book_cover")
             .select(f"book_id, {columns}")
@@ -181,34 +194,106 @@ def search_score(payload: dict, words: list[str], qn: str) -> tuple:
     return (-score, -popularity)
 
 
-def diverse_books(exclude_ids: list[str], count: int) -> list[dict]:
-    """Random books that are far apart from each other in the vector space."""
+def books_with_genre(ids: list[str], genre: str) -> set[str]:
+    """Which of these books have the genre? Asked in chunks of GENRE_CHUNK ids."""
+    nums = []
+    for i in ids:
+        try:
+            nums.append(int(i))
+        except ValueError:
+            pass
+    out: set[str] = set()
+    for i in range(0, len(nums), GENRE_CHUNK):
+        rows = (
+            sb.rpc("filter_books_by_genre", {"p_ids": nums[i : i + GENRE_CHUNK], "p_genre": genre})
+            .execute()
+            .data
+            or []
+        )
+        out |= {str(r["book_id"]) for r in rows}
+    return out
+
+
+def nearest_with_genre(query_vec: list[float], genre: str, rated_ids: list[str], read_works: set, want: int):
+    """The `want` closest books that have `genre`: not already rated, one entry per book."""
+    flt = None
+    if rated_ids:
+        flt = models.Filter(must_not=[
+            models.FieldCondition(key="book_id", match=models.MatchAny(any=rated_ids))
+        ])
+    ok: set[str] = set()       # books known to have the genre
+    checked: set[str] = set()  # books whose genres we already asked the database about
+    cands: list = []
+    for fetch in GENRE_FETCH_STEPS:
+        hits = qdrant.query_points(
+            COLLECTION, query=query_vec, query_filter=flt, limit=fetch, with_payload=LIGHT_KEYS
+        ).points
+        new_ids = [str(h.payload["book_id"]) for h in hits if str(h.payload["book_id"]) not in checked]
+        ok |= books_with_genre(new_ids, genre)
+        checked.update(new_ids)
+
+        seen, cands = set(), []
+        for h in hits:  # already closest first
+            if str(h.payload["book_id"]) not in ok:
+                continue
+            k = work_key(h.payload)
+            if k in read_works or k in seen:
+                continue
+            seen.add(k)
+            cands.append(h)
+            if len(cands) == want:
+                return cands
+        if len(hits) < fetch:  # nothing further to look at
+            break
+    return cands
+
+
+def diverse_books(exclude_ids: list[str], count: int, genre: str | None = None) -> list[dict]:
+    """Random books that are far apart from each other in the vector space
+    (only books of `genre` when one is given)."""
     must_not = []
     if exclude_ids:
         must_not.append(models.FieldCondition(key="book_id", match=models.MatchAny(any=exclude_ids)))
+    flt = models.Filter(must_not=must_not) if must_not else None
+    sample = models.SampleQuery(sample=models.Sample.RANDOM)
 
-    points = qdrant.query_points(
-        COLLECTION,
-        query=models.SampleQuery(sample=models.Sample.RANDOM),
-        query_filter=models.Filter(must_not=must_not) if must_not else None,
-        limit=COLD_START_POOL,
-        with_payload=BOOK_KEYS,
-        with_vectors=True,
-    ).points
+    items = []  # (payload, vector)
+    if genre is None:
+        points = qdrant.query_points(
+            COLLECTION, query=sample, query_filter=flt, limit=COLD_START_POOL,
+            with_payload=BOOK_KEYS, with_vectors=True,
+        ).points
+        items = [(p.payload, p.vector) for p in points if p.vector is not None]
+    else:
+        # sample random books, keep the ones with this genre, look at more only if too few
+        kept = []
+        for n in COLD_START_GENRE_STEPS:
+            sampled = qdrant.query_points(
+                COLLECTION, query=sample, query_filter=flt, limit=n,
+                with_payload=LIGHT_KEYS, with_vectors=False,
+            ).points
+            ok = books_with_genre([str(p.payload["book_id"]) for p in sampled], genre)
+            kept = [p for p in sampled if str(p.payload["book_id"]) in ok]
+            if len(kept) >= COLD_START_POOL or len(sampled) < n:
+                break
+        kept = kept[:COLD_START_POOL]
+        if not kept:
+            return []
+        full = qdrant.retrieve(COLLECTION, ids=[p.id for p in kept], with_payload=False, with_vectors=True)
+        vec_of = {r.id: r.vector for r in full}
+        items = [(p.payload, vec_of[p.id]) for p in kept if vec_of.get(p.id) is not None]
 
     seen, uniq = set(), []
-    for p in points:
-        if p.vector is None:
-            continue
-        k = work_key(p.payload)
+    for payload, vec in items:
+        k = work_key(payload)
         if k in seen:
             continue
         seen.add(k)
-        uniq.append(p)
+        uniq.append((payload, vec))
     if not uniq:
         return []
 
-    V = np.asarray([first_vector(p.vector) for p in uniq], dtype=np.float32)
+    V = np.asarray([first_vector(v) for _, v in uniq], dtype=np.float32)
     V /= np.maximum(np.linalg.norm(V, axis=1, keepdims=True), 1e-8)
 
     # farthest-point selection: each new pick is the book farthest from all picks so far
@@ -222,11 +307,11 @@ def diverse_books(exclude_ids: list[str], count: int) -> list[dict]:
         min_dist = np.minimum(min_dist, 1.0 - V @ V[nxt])
 
     random.shuffle(chosen)
-    return [{k: uniq[i].payload.get(k) for k in BOOK_KEYS} for i in chosen]
+    return [{k: uniq[i][0].get(k) for k in BOOK_KEYS} for i in chosen]
 
 
-def cold_start(rated_ids: list[str], limit: int) -> dict:
-    books = diverse_books(rated_ids, min(limit, COLD_START_COUNT))
+def cold_start(rated_ids: list[str], limit: int, genre: str | None = None) -> dict:
+    books = diverse_books(rated_ids, min(limit, COLD_START_COUNT), genre)
     extras = book_extras([str(b["book_id"]) for b in books])
     for b in books:
         b["cover_link"] = cover_of(extras, str(b["book_id"]))
@@ -369,36 +454,42 @@ def health():
 
 
 @app.get("/recommend")
-def recommend(limit: int = N_RESULTS, authorization: str | None = Header(default=None)):
+def recommend(limit: int = N_RESULTS, genre: str | None = None, authorization: str | None = Header(default=None)):
     uid = get_user_id(authorization)
     limit = max(1, min(limit, N_CANDIDATES))
+    genre = genre or None
+    if genre is not None and genre not in ALLOWED_GENRES:
+        raise HTTPException(400, "Unknown genre")
 
     # 1-2. The user's taste profile (rating-weighted mean of the vectors of the books they liked)
     rated_ids, rated_points, profile, user_total, user_avg = load_user_profile(uid)
     if profile is None:
-        return cold_start(rated_ids, limit)
+        return cold_start(rated_ids, limit, genre)
 
-    # 3. Nearest books the user hasn't rated, then drop duplicate editions
-    hits = qdrant.query_points(
-        COLLECTION,
-        query=profile.tolist(),
-        query_filter=models.Filter(must_not=[
-            models.FieldCondition(key="book_id", match=models.MatchAny(any=rated_ids))
-        ]),
-        limit=N_CANDIDATES * OVERFETCH,
-        with_payload=True,
-    ).points
-
+    # 3. The 100 nearest books the user hasn't rated, one entry per book
     read_works = {work_key(p.payload) for p in rated_points}
-    seen, cands = set(), []
-    for h in hits:  # already best score first
-        k = work_key(h.payload)
-        if k in read_works or k in seen:
-            continue
-        seen.add(k)
-        cands.append(h)
-        if len(cands) == N_CANDIDATES:
-            break
+    if genre:
+        # only books of the chosen genre, taken from the closest ones outwards
+        cands = nearest_with_genre(profile.tolist(), genre, rated_ids, read_works, N_CANDIDATES)
+    else:
+        hits = qdrant.query_points(
+            COLLECTION,
+            query=profile.tolist(),
+            query_filter=models.Filter(must_not=[
+                models.FieldCondition(key="book_id", match=models.MatchAny(any=rated_ids))
+            ]),
+            limit=N_CANDIDATES * OVERFETCH,
+            with_payload=True,
+        ).points
+        seen, cands = set(), []
+        for h in hits:  # already best score first
+            k = work_key(h.payload)
+            if k in read_works or k in seen:
+                continue
+            seen.add(k)
+            cands.append(h)
+            if len(cands) == N_CANDIDATES:
+                break
     if not cands:
         return {"books": [], "reason": "no_candidates"}
 
@@ -530,8 +621,9 @@ def explore(q: str, limit: int = N_RESULTS, authorization: str | None = Header(d
 
 
 @app.get("/search")
-def search(q: str, limit: int = 40, authorization: str | None = Header(default=None)):
+def search(q: str, limit: int = 100, authorization: str | None = Header(default=None)):
     get_user_id(authorization)
+    limit = max(1, min(limit, 300))
 
     qn = norm(q)
     words = [w for w in qn.split() if len(w) >= 2][:8]

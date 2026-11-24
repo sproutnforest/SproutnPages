@@ -1,10 +1,9 @@
 import BookSection from "../components/BookSection";
-import { getRecommendations } from "../lib/recommend";
-import type { RecommendedBook } from "../lib/recommend";
+import ExploreChat from "../components/ExploreChat";
+import PickedForYou from "../components/PickedForYou";
 import { getBestRated, getPopularBooks } from "../lib/sections";
 import type { SectionBook } from "../lib/sections";
 import { useBookList } from "../lib/BookList";
-import ExploreChat from "../components/ExploreChat";
 
 const greetings = [
   {
@@ -38,49 +37,14 @@ function getGreeting(hour: number) {
   return current.text;
 }
 
-const emptyMessages: Record<string, string> = {
-  no_history:
-    "Rate a few books you liked (3 stars or more) and your picks will show up here.",
-  no_vectors:
-    "Rate a few books you liked (3 stars or more) and your picks will show up here.",
-  cold_start:
-    "We couldn't pick any books right now. Please try again in a moment.",
-  no_candidates: "We've run out of new suggestions. Try rating more books.",
-};
-
 export default function Home() {
   const greeting = getGreeting(new Date().getHours());
-
-  const recs = useBookList(getRecommendations);
   const popular = useBookList(getPopularBooks);
   const best = useBookList(getBestRated);
 
-  const recBooks: RecommendedBook[] = recs.data?.books ?? [];
-  const reason = recs.data?.reason ?? null;
-
   return (
     <main className="page">
-      <BookSection
-        title="Picked for you"
-        subtitle={greeting}
-        books={recBooks}
-        loading={recs.loading}
-        loadingText="Finding your next read"
-        error={recs.error}
-        onRetry={recs.retry}
-        emptyMessage={
-          (reason && emptyMessages[reason]) ??
-          "No recommendations right now. Check back soon."
-        }
-        note={
-          reason === "cold_start" ? (
-            <p className="panel-sub cold-note">
-              Rate a few books you like (3 stars or more) and your picks will
-              start matching your taste.
-            </p>
-          ) : null
-        }
-      />
+      <PickedForYou greeting={greeting} />
 
       <ExploreChat />
 
