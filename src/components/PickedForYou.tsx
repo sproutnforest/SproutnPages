@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import BookList from "./BookList";
 import SkeletonGrid from "./SkeletonGrid";
-import { GENRES, genreLabel } from "../lib/genres";
+import { genreLabel, useGenres } from "../lib/genres";
 import { getRecommendations } from "../lib/recommend";
 import type { RecommendResult } from "../lib/recommend";
 
@@ -11,7 +11,8 @@ export default function PickedForYou({ greeting }: { greeting: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
-  const cache = useRef(new Map<string, RecommendResult>()); 
+  const { genres: genreList, loading: genresLoading } = useGenres();
+  const cache = useRef(new Map<string, RecommendResult>());
 
   useEffect(() => {
     const key = genre ?? "all";
@@ -24,7 +25,7 @@ export default function PickedForYou({ greeting }: { greeting: string }) {
     }
 
     const ctrl = new AbortController();
-    setData(null); 
+    setData(null);
     setError("");
     setLoading(true);
 
@@ -50,27 +51,42 @@ export default function PickedForYou({ greeting }: { greeting: string }) {
     <section className="panel home-section">
       <div className="panel-head">
         <h3 className="panel-title">Picked for you</h3>
-        <span className="panel-sep" aria-hidden="true">~</span>
+        <span className="panel-sep" aria-hidden="true">
+          ~
+        </span>
         <p className="panel-sub">{greeting}</p>
       </div>
 
       {/* shown right away; it does not wait for any books */}
-      <div className="genre-filter" role="group" aria-label="Filter recommendations by genre">
-        {GENRES.map((g) => {
-          const active = genre === g;
-          const dimmed = genre !== null && !active;
-          return (
-            <button
-              key={g}
-              type="button"
-              className={`genre-btn${active ? " is-active" : ""}${dimmed ? " is-dim" : ""}`}
-              aria-pressed={active}
-              onClick={() => setGenre(active ? null : g)}
-            >
-              {genreLabel(g)}
-            </button>
-          );
-        })}
+      <div
+        className="genre-filter"
+        role="group"
+        aria-label="Filter recommendations by genre"
+      >
+        {genreList.length > 0
+          ? genreList.map(({ genre: g }) => {
+              const active = genre === g;
+              const dimmed = genre !== null && !active;
+              return (
+                <button
+                  key={g}
+                  type="button"
+                  className={`genre-btn${active ? " is-active" : ""}${dimmed ? " is-dim" : ""}`}
+                  aria-pressed={active}
+                  onClick={() => setGenre(active ? null : g)}
+                >
+                  {genreLabel(g)}
+                </button>
+              );
+            })
+          : genresLoading &&
+            Array.from({ length: 8 }, (_, i) => (
+              <span
+                key={i}
+                className="skeleton skeleton-chip"
+                aria-hidden="true"
+              />
+            ))}
       </div>
 
       {loading && <SkeletonGrid count={10} label="Finding your next read" />}
@@ -78,7 +94,11 @@ export default function PickedForYou({ greeting }: { greeting: string }) {
       {error && (
         <div>
           <p className="auth-error">{error}</p>
-          <button type="button" className="btn" onClick={() => setAttempt((n) => n + 1)}>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => setAttempt((n) => n + 1)}
+          >
             Try again
           </button>
         </div>
@@ -94,11 +114,14 @@ export default function PickedForYou({ greeting }: { greeting: string }) {
 
       {data?.reason === "cold_start" && data.books.length > 0 && (
         <p className="panel-sub cold-note">
-          Rate a few books you like (3 stars or more) and your picks will start matching your taste.
+          Rate a few books you like (3 stars or more) and your picks will start
+          matching your taste.
         </p>
       )}
 
-      {data && data.books.length > 0 && <BookList key={genre ?? "all"} books={data.books} />}
+      {data && data.books.length > 0 && (
+        <BookList key={genre ?? "all"} books={data.books} />
+      )}
     </section>
   );
 }

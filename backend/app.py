@@ -13,6 +13,7 @@ import lightgbm as lgb  # keep this right after the block above
 import os
 import random
 import re
+import time
 import unicodedata
 
 import httpx
@@ -49,11 +50,6 @@ BEST_POOL = 300
 BOOK_KEYS = ["book_id", "title", "author", "description", "author_id"]
 LIGHT_KEYS = ["book_id", "title", "author", "author_id"]  # enough for a book card (no long description)
 
-# the genres the website offers, exactly as they are stored in book_cover.genres
-ALLOWED_GENRES = {
-    "fiction", "fantasy", "paranormal", "children", "crime", "mystery", "thriller", "young-adult",
-    "biography", "historical fiction", "history", "non-fiction", "romance", "comics", "graphic", "poetry",
-}
 # Genres live in Supabase, not in Qdrant, so a genre search looks through the nearest books in
 # widening steps and only goes further when there are not enough matches yet.
 GENRE_FETCH_STEPS = (300, 1200, 3600)
@@ -192,6 +188,30 @@ def search_score(payload: dict, words: list[str], qn: str) -> tuple:
             score += 1
     popularity = float(payload.get("b_cnt") or 0)
     return (-score, -popularity)
+
+
+_genre_cache: dict = {"at": 0.0, "rows": []}
+
+
+def genre_rows(force: bool = False, max_age: float = 600.0) -> list[dict]:
+    """The genres on offer ([{genre, books}], most books first), from the Supabase `genres` view.
+    Kept in memory for a few minutes so most requests do not need the database."""
+    now = time.time()
+    if force or not _genre_cache["rows"] or now - _genre_cache["at"] > max_age:
+        rows = sb.table("genres").select("genre, books").order("books", desc=True).execute().data or []
+        if rows:
+            _genre_cache["rows"] = rows
+            _genre_cache["at"] = now
+    return _genre_cache["rows"]
+
+
+def valid_genre(genre: str) -> bool:
+    if any(r["genre"] == genre for r in genre_rows()):
+        return True
+    # maybe a genre that was added a moment ago: look again, but at most once a minute
+    if time.time() - _genre_cache["at"] > 60:
+        return any(r["genre"] == genre for r in genre_rows(force=True))
+    return False
 
 
 def books_with_genre(ids: list[str], genre: str) -> set[str]:
@@ -453,12 +473,19 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/genres")
+def genres(authorization: str | None = Header(default=None)):
+    """Every genre in the catalogue with its number of books, most books first."""
+    get_user_id(authorization)
+    return {"genres": genre_rows()}
+
+
 @app.get("/recommend")
 def recommend(limit: int = N_RESULTS, genre: str | None = None, authorization: str | None = Header(default=None)):
     uid = get_user_id(authorization)
     limit = max(1, min(limit, N_CANDIDATES))
     genre = genre or None
-    if genre is not None and genre not in ALLOWED_GENRES:
+    if genre is not None and not valid_genre(genre):
         raise HTTPException(400, "Unknown genre")
 
     # 1-2. The user's taste profile (rating-weighted mean of the vectors of the books they liked)
