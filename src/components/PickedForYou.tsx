@@ -11,7 +11,7 @@ export default function PickedForYou({ greeting }: { greeting: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
-  const cache = useRef(new Map<string, RecommendResult>()); // results already loaded on this visit
+  const cache = useRef(new Map<string, RecommendResult>()); 
 
   useEffect(() => {
     const key = genre ?? "all";
@@ -24,7 +24,7 @@ export default function PickedForYou({ greeting }: { greeting: string }) {
     }
 
     const ctrl = new AbortController();
-    setData(null); // the old books go away as soon as another choice is made
+    setData(null); 
     setError("");
     setLoading(true);
 
